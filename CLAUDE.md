@@ -1,0 +1,159 @@
+# breadsheet-hass — Claude Context
+
+## Project Purpose
+A Home Assistant custom integration for breadsheet.com, a recipe scheduling tool for
+multi-day bakes like sourdough. It pulls a user's active Fancy bakes from the breadsheet
+API and turns them into HA entities, notifications with a Done button, and iOS Live
+Activities. From M4 it also registers a Breadsheet LLM API, so AI assistants (Claude,
+ChatGPT, HA Assist) can plan bakes, check off steps, and import recipes through HA.
+
+Distributed through the Home Assistant Marketplace (the built-in successor to HACS as of
+HA 2026.11). This is a custom integration, not an add-on.
+
+## Companion Repos
+- **Backend** (`brystmar/breadsheet`): Python/Flask API at `api.breadsheet.com`. This
+  integration talks only to its `/api/v2` endpoints.
+- **Frontend** (`brystmar/breadsheet-ui`): React + Vite UI at breadsheet.com. The HA
+  sidebar panel embeds its bake view.
+- **This repo** (`brystmar/breadsheet-hass`): the HA integration and its blueprint.
+
+## Second Rise spec
+The source of truth is `../breadsheet/docs/second-rise-feature.md`, in the sibling
+checkout. Read it before planning or executing any work in this repo; the sections on
+the HA integration, resilience, API v2, and AI agents matter most here. Never copy it
+into this repo; if it needs changes, say so and stop.
+
+## Current Status
+- Empty scaffold: README, LICENSE, `.gitignore`, `docs/`. No integration code yet.
+- Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools
+  in M4, items 33 and 35). The backend endpoints this integration needs ship in M2 and
+  M3 of the `breadsheet` repo; don't build against endpoints that aren't in the spec.
+
+## Working Rules
+- Read this file and the spec before starting any task.
+- Look up current versions (HA Core, its required Python version, test tooling,
+  Marketplace requirements) rather than assuming them. HA's developer APIs change often.
+- Show a plan before changing anything.
+- Never commit or push without explicit instruction.
+- Test against a non-production HA instance only, never the household's production HA.
+- This repo is public. Keep personal infrastructure details (hostnames, IPs, tokens) out
+  of code, docs, tests, and fixtures.
+
+## Stack
+| Layer | Technology |
+|---|---|
+| Language | Python (whatever version current HA Core requires) |
+| Platform | Home Assistant custom integration (config entries, async) |
+| HTTP | `aiohttp` via HA's shared client session |
+| Tests | `pytest-homeassistant-custom-component` |
+| Distribution | Home Assistant Marketplace, installed from tagged GitHub release assets |
+| IDE | PyCharm Professional |
+
+## Planned Repo Structure
+Confirm against current HA and Marketplace docs during item 21.
+
+```
+breadsheet-hass/
+├── custom_components/breadsheet/
+│   ├── __init__.py        # Setup and unload of the config entry; stores runtime data
+│   ├── manifest.json      # Domain, version, requirements, iot_class (cloud_polling)
+│   ├── config_flow.py     # Pairing-code config flow
+│   ├── api.py             # Thin async client for /api/v2
+│   ├── coordinator.py     # Adaptive polling DataUpdateCoordinator
+│   ├── calendar.py        # One calendar event per bake step
+│   ├── sensor.py          # Per-bake current step, next step, next time, progress
+│   ├── services.yaml      # breadsheet.complete_step
+│   ├── panel.py           # Sidebar panel at /breadsheet with panel tokens
+│   ├── llm_api.py         # M4: Breadsheet LLM API and its tools
+│   ├── diagnostics.py     # Redacted diagnostics
+│   ├── strings.json       # UI strings
+│   └── translations/
+├── blueprints/automation/breadsheet/
+│   └── bake_notifications.yaml
+├── tests/
+└── docs/
+```
+
+## How the Integration Works
+- **Pairing.** The config flow asks for a pairing code (`XXXX-XXXX`) from breadsheet.com
+  and exchanges it at `POST /api/v2/devices` for a device token, stored in the config
+  entry. The user's breadsheet key never enters HA.
+- **Auth.** Every API call sends the device token as a bearer header. The token carries
+  all four scopes (`recipes:read`, `recipes:write`, `bakes:read`, `bakes:write`).
+- **Data flow is outbound only.** The integration polls breadsheet; breadsheet never
+  connects to HA. No webhooks.
+- **Polling.** `GET /api/v2/bakes?status=active&alert=fancy` every 60 seconds while a
+  Fancy bake is active, every 15 to 30 minutes otherwise. Honor the server's suggested
+  interval, its ETag, and any `Retry-After`. Idle polls must stay cheap: they're what
+  keep the backend's database asleep.
+- **Only Fancy bakes** reach HA. Simple bakes never appear.
+- **Panel.** The sidebar panel at `/breadsheet` embeds breadsheet's bake view with a
+  short-lived token from `POST /api/v2/panel-tokens` in the URL; no cookies.
+
+## Resilience Rules
+A running bake must survive a breadsheet outage of minutes to an hour.
+
+- A failed poll must not make entities unavailable. HA's `DataUpdateCoordinator` does
+  that by default, which would silence calendar triggers and notifications mid-bake.
+  Keep serving the last successful data, expose a "last synced" attribute, and mark
+  entities unavailable only once data is clearly stale (past the bake's projected end).
+- `breadsheet.complete_step` records `completed_at` at the moment it's called, sends it
+  to the API, and queues the call for retry with backoff if breadsheet is unreachable.
+  Re-project the local schedule immediately so notifications stay correct.
+- Check-off is idempotent on the server (first write wins), so retries are always safe.
+- 503 responses carry the standard error body (`code: service_unavailable`) and a
+  `Retry-After` header; back off accordingly.
+
+## API Contract
+- Use only the `/api/v2` endpoints the spec assigns to HA. The contract only grows, so
+  never depend on a field or endpoint before the spec says it ships.
+- Every error returns JSON with a stable `code` and a plain-language `message`. Branch
+  on `code`, never on `message` text.
+- Times arrive in UTC and in the bake's IANA time zone. Durations are in seconds.
+- Missing detail means unknown, never zero: a null `active_seconds` is not 0.
+
+## Blueprint
+Inputs: notify targets, lead time (default 2 minutes), Live Activities on or off.
+- A notification before and at each step, with a Done action calling
+  `breadsheet.complete_step`.
+- One late reminder at +5 minutes, then nothing.
+- Same-minute steps as separate notifications, 1 to 2 seconds apart.
+- Live Activities (opt-in) via the companion app's `live_update` payload: `tag` is the
+  bake id, one activity updated across consecutive steps, ended before waits over 4
+  hours, no update for zero-wait steps. See the spec for every field.
+
+## AI Agents (M4)
+- Register a **Breadsheet** LLM API using HA's LLM API helpers, containing only
+  breadsheet tools. HA's MCP Server integration exposes it to MCP clients; Assist
+  conversation agents can use it directly.
+- Tools are a thin layer over `/api/v2`: they hold no data and enforce nothing the API
+  doesn't. The tool list and scopes are in the spec.
+- Tool calls send `X-Breadsheet-Via: agent`, plus `X-Breadsheet-Agent: <name>` when HA's
+  LLM context identifies the client. Non-agent calls send `X-Breadsheet-Via: ha`.
+- Tool descriptions spell out units (seconds), time zone handling, the "unknown is not
+  zero" rule, and that `cancel_bake` can't be undone.
+- The README must tell users to connect assistants to the Breadsheet MCP URL only, and to
+  review HA's "Expose all LLM APIs" option, which is on by default.
+
+## Security
+- Never log, print, or include the device token or panel tokens in diagnostics; redact
+  them.
+- Treat everything returned by the API (recipe names, step text) as untrusted text: it
+  comes from other users via the community library.
+
+## Release and Distribution
+- Every version is a tagged GitHub release with a packaged asset; the Marketplace
+  installs from release assets, not arbitrary scripts.
+- Keep `manifest.json`'s version in sync with the release tag.
+- New community repos are submitted through the `hacs/default` repository. Check the
+  Marketplace contributor docs (contributors.home-assistant.io/marketplace) for current
+  manifest requirements before the first release.
+
+## Coding Conventions
+- Async only. Never block the event loop; no `requests`, no synchronous I/O.
+- Use HA's shared `aiohttp` client session, not a new one.
+- Config entries only; no YAML configuration for the integration.
+- Follow HA's integration quality scale where practical, and use translations for every
+  user-facing string.
+- Include comments for non-obvious logic; preserve existing comments when refactoring
+  unless the related code is removed.
