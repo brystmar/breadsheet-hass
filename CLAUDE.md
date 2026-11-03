@@ -18,7 +18,7 @@ HA 2026.11). This is a custom integration, not an add-on.
 - **This repo** (`brystmar/breadsheet-hass`): the HA integration and its blueprint.
 
 ## Second Rise spec
-The source of truth is `../breadsheet/docs/second-rise-feature.md`, in the sibling
+The source of truth is `../breadsheet/docs/second-rise.md`, in the sibling
 checkout. Read it before planning or executing any work in this repo; the sections on
 the HA integration, resilience, API v2, and AI agents matter most here. Never copy it
 into this repo; if it needs changes, say so and stop.
