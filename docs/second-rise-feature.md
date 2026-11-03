@@ -8,7 +8,7 @@ Second Rise turns breadsheet from a standalone scheduler into a tool that tracks
 
 To get there, breadsheet gains lightweight no-login identity, personal and community recipes, bakes as a first-class object, optional step detail (wait ranges, hands-on time), and a move from DynamoDB to Postgres. The work ships in four milestones (see Milestones).
 
-**Audience.** Thomas, friends, and the Home Assistant community. Success is a few hundred monthly active users, not tens of thousands. Design for simplicity and low maintenance over scale.
+**Audience.** Thomas, friends, and the Home Assistant community. Success is a few dozen monthly active users, not tens of thousands. Designed for (relative) simplicity and low(er) maintenance over scale.
 
 | Repo | Role | Changes in Second Rise |
 | --- | --- | --- |
