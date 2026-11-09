@@ -61,3 +61,11 @@ async def test_an_error_without_a_code_is_http_error(client: BreadsheetClient,
     with pytest.raises(BreadsheetApiError) as caught:
         await client._request("GET", "/bakes")
     assert caught.value.code == "http_error"
+
+
+@pytest.mark.parametrize("body", [{}, {"bakes": {"not": "a list"}}, {"bakes": ["not a bake"]}])
+async def test_a_malformed_bake_list_is_worth_retrying(client: BreadsheetClient, aioclient_mock: AiohttpClientMocker,
+                                                       body: dict) -> None:
+    aioclient_mock.get("https://api.example.test/api/v2/bakes?status=active&alert=fancy", json=body)
+    with pytest.raises(BreadsheetConnectionError):
+        await client.active_fancy_bakes()
