@@ -69,8 +69,9 @@ class BreadsheetConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_mismatch(reason="wrong_account",
                                                   description_placeholders={"username": entry.title,
                                                                             "profile_url": PROFILE_URL})
+                # data_updates, not data: the entry keeps its webhook id
                 return self.async_update_reload_and_abort(entry, title=pairing.username,
-                                                          data=self._entry_data(api_url, pairing))
+                                                          data_updates=self._entry_data(api_url, pairing))
 
         return self.async_show_form(step_id="reauth_confirm", data_schema=PAIRING_SCHEMA, errors=errors,
                                     description_placeholders={"username": entry.title, "profile_url": PROFILE_URL})

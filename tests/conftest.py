@@ -12,6 +12,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 DEVICES_URL = f"{DEFAULT_API_URL}/api/v2/devices"
 BAKES_URL = f"{DEFAULT_API_URL}/api/v2/bakes?status=active&alert=fancy"
+WEBHOOK_URL = f"{DEFAULT_API_URL}/api/v2/device/webhook"
 BAKE_ID = "0196f2a0-0000-7000-8000-0000000b0001"
 OTHER_BAKE_ID = "0196f2a0-0000-7000-8000-0000000b0002"
 USER_ID = "0196f2a0-0000-7000-8000-000000000001"
@@ -71,6 +72,14 @@ def mock_bakes(aioclient_mock, bakes: list[dict] | None = None, *, interval: int
     if status == 200:
         kwargs.setdefault("json", {"bakes": bakes or []})
     aioclient_mock.get(BAKES_URL, status=status, headers=headers, **kwargs)
+    mock_webhook(aioclient_mock)
+
+
+def mock_webhook(aioclient_mock, **kwargs) -> None:
+    """Breadsheet's answer to setting or clearing this HA's webhook (204 unless told otherwise)."""
+    kwargs.setdefault("status", 204)
+    aioclient_mock.put(WEBHOOK_URL, **kwargs)
+    aioclient_mock.delete(WEBHOOK_URL, **kwargs)
 
 
 def error_body(code: str, message: str = "Nope.") -> dict:
