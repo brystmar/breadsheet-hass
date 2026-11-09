@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime, timedelta
+
 from .models import Bake, BakeStep
 
 
@@ -25,3 +28,24 @@ def progress(bake: Bake) -> tuple[int, int]:
     """(steps checked off, steps in the bake), leaving out skipped steps."""
     steps = [step for step in bake.steps if not step.skipped]
     return sum(step.completed_at is not None for step in steps), len(steps)
+
+
+def with_check_off(bake: Bake, position: int, completed_at: datetime) -> Bake:
+    """
+    The bake with one step checked off and the schedule re-projected, the way breadsheet's `Bake.project()` does
+    it: each later step is due at the previous step's check-off (or due time, if not checked off) plus that
+    previous step's chosen wait. Steps before this one keep their times. Unchanged if the step is already done.
+    """
+    steps = list(bake.steps)
+    index = next((i for i, step in enumerate(steps) if step.position == position), None)
+    if index is None or steps[index].done:
+        return bake
+    steps[index] = replace(steps[index], completed_at=completed_at)
+    time = completed_at + timedelta(seconds=steps[index].wait_chosen)
+    for i in range(index + 1, len(steps)):
+        step = steps[i]
+        if step.skipped:
+            continue
+        steps[i] = replace(step, scheduled_at=time)
+        time = (step.completed_at or time) + timedelta(seconds=step.wait_chosen)
+    return replace(bake, steps=tuple(steps), projected_end=time, status="in_progress")

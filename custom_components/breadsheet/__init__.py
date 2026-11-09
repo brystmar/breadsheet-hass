@@ -8,17 +8,21 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .api import BreadsheetClient
+from .checkoffs import CheckOffs, async_remove_checkoffs
 from .const import CONF_API_URL, CONF_LEAD_MINUTES, DEFAULT_LEAD_MINUTES, DOMAIN
 from .coordinator import STORAGE_VERSION, BreadsheetCoordinator, storage_key
+from .services import async_setup_services
 from .step_events import StepEvents
 
 PLATFORMS: list[Platform] = [Platform.CALENDAR, Platform.SENSOR]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 @dataclass(slots=True)
@@ -27,6 +31,7 @@ class BreadsheetData:
 
     client: BreadsheetClient
     coordinator: BreadsheetCoordinator
+    checkoffs: CheckOffs
 
 
 type BreadsheetConfigEntry = ConfigEntry[BreadsheetData]
@@ -39,12 +44,21 @@ async def async_create_client(hass: HomeAssistant, api_url: str, token: str | No
                             user_agent=f"breadsheet-hass/{integration.version}")
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the integration's actions, once for every config entry."""
+    async_setup_services(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -> bool:
     """Set up Breadsheet from a config entry."""
     client = await async_create_client(hass, entry.data[CONF_API_URL], entry.data[CONF_TOKEN])
-    coordinator = BreadsheetCoordinator(hass, entry, client)
+    checkoffs = CheckOffs(hass, entry, client)
+    await checkoffs.async_load()
+    coordinator = BreadsheetCoordinator(hass, entry, client, checkoffs)
     await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = BreadsheetData(client=client, coordinator=coordinator)
+    entry.runtime_data = BreadsheetData(client=client, coordinator=coordinator, checkoffs=checkoffs)
+    entry.async_on_unload(checkoffs.async_start(coordinator))
 
     # Listeners also keep the coordinator polling (it only polls while something listens), so
     # breadsheet_bake_ended and the step events work even with every entity disabled.
@@ -79,5 +93,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -> None:
-    """Delete the saved bakes when the integration is removed."""
+    """Delete the saved bakes and any undelivered check-offs when the integration is removed."""
     await Store(hass, STORAGE_VERSION, storage_key(entry.entry_id)).async_remove()
+    await async_remove_checkoffs(hass, entry.entry_id)
