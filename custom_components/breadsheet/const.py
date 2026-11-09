@@ -24,6 +24,9 @@ EVENT_BAKE_ENDED: Final = "breadsheet_bake_ended"
 EVENT_STEP_UPCOMING: Final = "breadsheet_step_upcoming"
 EVENT_STEP_DUE: Final = "breadsheet_step_due"
 EVENT_STEP_LATE: Final = "breadsheet_step_late"
+# Fired when a bake first appears, or its next step, that step's time, or its progress changes (a check-off, a
+# skip, a new wait): what a Live Activity shows. Not fired for ended bakes; breadsheet_bake_ended covers those.
+EVENT_BAKE_CHANGED: Final = "breadsheet_bake_changed"
 
 # Options
 CONF_LEAD_MINUTES: Final = "lead_minutes"

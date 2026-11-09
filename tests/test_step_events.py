@@ -201,3 +201,42 @@ async def test_unloading_stops_the_events(
     await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await until(hass, frozen, "19:20")
     assert fired(events) == []
+
+
+class TestBakeChanged:
+    async def test_a_new_bake_and_each_check_off_are_announced(
+            self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker,
+            mock_config_entry: MockConfigEntry) -> None:
+        from custom_components.breadsheet.const import EVENT_BAKE_CHANGED
+        changed = async_capture_events(hass, EVENT_BAKE_CHANGED)
+        mock_bakes(aioclient_mock, [under_way()], interval=60)
+        await set_up(hass, mock_config_entry)
+        assert changed[0].data == {
+            "bake_id": BAKE_ID, "bake_name": "Weekend Loaf", "bake_path": "/bakes/abc123",
+            "next_position": 2, "next_text": "Step 2", "next_scheduled_at": "2026-11-09T19:05:00+00:00",
+            "steps_done": 1, "steps_total": 3}
+
+        await new_answer(hass, aioclient_mock, mock_config_entry, [under_way(completed_at="2026-11-09T18:58:00+00:00")])
+        assert [(e.data["next_position"], e.data["steps_done"]) for e in changed] == [(2, 1), (3, 2)]
+
+    async def test_unchanged_polls_announce_nothing(
+            self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,
+            frozen: FrozenDateTimeFactory) -> None:
+        from custom_components.breadsheet.const import EVENT_BAKE_CHANGED
+        changed = async_capture_events(hass, EVENT_BAKE_CHANGED)
+        mock_bakes(aioclient_mock, [under_way()], interval=60)
+        await set_up(hass, mock_config_entry)
+        await until(hass, frozen, "18:55")  # several polls with the same answer
+        assert len(changed) == 1
+
+    async def test_a_finished_bake_announces_no_next_step(
+            self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker,
+            mock_config_entry: MockConfigEntry) -> None:
+        from custom_components.breadsheet.const import EVENT_BAKE_CHANGED
+        changed = async_capture_events(hass, EVENT_BAKE_CHANGED)
+        mock_bakes(aioclient_mock, [under_way()], interval=60)
+        await set_up(hass, mock_config_entry)
+        done = under_way(completed_at="2026-11-09T18:58:00+00:00")
+        done["steps"][2]["completed_at"] = "2026-11-09T18:59:00+00:00"
+        await new_answer(hass, aioclient_mock, mock_config_entry, [done])
+        assert (changed[-1].data["next_position"], changed[-1].data["steps_done"]) == (None, 3)

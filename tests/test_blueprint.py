@@ -128,3 +128,82 @@ async def test_recipe_text_is_shown_never_run_as_a_template(hass: HomeAssistant,
     await use_blueprint(hass)
     await fire(hass, "breadsheet_step_due", step_event(text="{{ states('sensor.secret') }}"))
     assert notified[0].data["message"] == "Now: {{ states('sensor.secret') }}"
+
+
+def in_minutes(minutes: float) -> str:
+    return (dt_util.utcnow() + timedelta(minutes=minutes)).isoformat()
+
+
+def changed(next_position: int | None = 2, text: str | None = "Mix", at: str | None = None, done: int = 1) -> dict:
+    """What breadsheet_bake_changed carries (step_events.bake_changed_data)."""
+    return {"bake_id": BAKE_ID, "bake_name": "Weekend Loaf", "bake_path": "/bakes/abc123",
+            "next_position": next_position, "next_text": text,
+            "next_scheduled_at": at if at is not None or next_position is None else in_minutes(30),
+            "steps_done": done, "steps_total": 3}
+
+
+def cards(notified: list) -> list[dict]:
+    """The live_update and clear_notification calls, as (message, data)."""
+    return [call.data for call in notified if call.data.get("data", {}).get("live_update")
+            or call.data.get("message") == "clear_notification"]
+
+
+class TestLiveActivities:
+    async def test_off_unless_turned_on(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass)
+        await fire(hass, "breadsheet_bake_changed", changed())
+        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID})
+        assert notified == []
+
+    async def test_a_card_counts_down_to_the_next_step(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        at = in_minutes(30)
+        await fire(hass, "breadsheet_bake_changed", changed(at=at))
+        (card,) = cards(notified)
+        assert (card["title"], card["message"]) == ("Weekend Loaf", "Mix")
+        data = card["data"]
+        assert data["tag"] == f"breadsheet_{BAKE_ID}"
+        assert (data["chronometer"], data["when"], data["when_relative"]) == (
+            True, int(dt_util.parse_datetime(at).timestamp()), False)
+        assert (data["progress"], data["progress_max"], data["critical_text"]) == (1, 3, "Mix 2/3")
+        assert (data["silent"], data["alert_once"]) == (True, True)
+        assert data["url"] == data["clickAction"] == f"/breadsheet/{BAKE_ID}"
+
+    async def test_the_label_is_short(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_bake_changed", changed(text="Stretch-and-folds every 30 minutes"))
+        assert cards(notified)[0]["data"]["critical_text"] == "Stretch-and- 2/3"
+
+    async def test_it_ends_before_a_long_wait(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_bake_changed", changed(at=in_minutes(5 * 60)))
+        assert cards(notified) == [{"message": "clear_notification", "data": {"tag": f"breadsheet_{BAKE_ID}"}}]
+
+    async def test_and_comes_back_with_the_warning_before_the_next_step(self, hass: HomeAssistant,
+                                                                         notified: list) -> None:
+        await use_blueprint(hass, live_activities=True, send_upcoming=False)
+        await fire(hass, "breadsheet_step_upcoming", step_event(position=3, text="Bake", scheduled_at=in_minutes(2)))
+        assert [card["message"] for card in cards(notified)] == ["Bake"]
+        assert len(notified) == 1  # the card only: the warning itself is turned off
+
+    async def test_steps_due_now_get_no_update(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_bake_changed", changed(at=in_minutes(0.5)))
+        assert notified == []
+
+    async def test_a_bake_with_nothing_left_is_cleared(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_bake_changed", changed(next_position=None, text=None, done=3))
+        assert [card["message"] for card in cards(notified)] == ["clear_notification"]
+
+    async def test_an_ended_bake_is_cleared(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID, "outcome": "canceled"})
+        assert cards(notified) == [{"message": "clear_notification", "data": {"tag": f"breadsheet_{BAKE_ID}"}}]
+
+    async def test_the_warning_and_the_card_both_go_out(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_step_upcoming", step_event(scheduled_at=in_minutes(2)))
+        assert len(notified) == 2
+        assert notified[0].data["message"].startswith("At ")
+        assert notified[1].data["data"]["live_update"] is True
