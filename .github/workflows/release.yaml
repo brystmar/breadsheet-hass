@@ -1,0 +1,38 @@
+# Attach the integration as breadsheet.zip to each published release. The Marketplace installs from this
+# asset (hacs.json: zip_release), extracting it into custom_components/breadsheet/, so the zip holds the
+# integration's files at its root.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check that manifest.json's version matches the tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(jq -r .version custom_components/breadsheet/manifest.json)
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "::error::Tag $TAG doesn't match manifest.json version $version"
+            exit 1
+          fi
+
+      - name: Build breadsheet.zip
+        run: |
+          cd custom_components/breadsheet
+          zip -r "$GITHUB_WORKSPACE/breadsheet.zip" . -x "__pycache__/*" "*/__pycache__/*" "*.pyc"
+
+      - name: Upload it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" breadsheet.zip --clobber

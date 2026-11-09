@@ -24,7 +24,10 @@ the HA integration, resilience, API v2, and AI agents matter most here. Never co
 into this repo; if it needs changes, say so and stop.
 
 ## Current Status
-- Empty scaffold: README, LICENSE, `.gitignore`, `docs/`. No integration code yet.
+- breadsheet-hass#1: the scaffold, Marketplace metadata (`hacs.json`, `brand/`), release packaging, and the
+  pairing config flow with reauth and diagnostics. No entities yet; the coordinator is breadsheet-hass#2.
+- Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
+  is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools
   in M4, items 33 and 35). The backend endpoints this integration needs ship in M2 and
   M3 of the `breadsheet` repo; don't build against endpoints that aren't in the spec.
@@ -66,8 +69,8 @@ breadsheet-hass/
 │   ├── panel.py           # Sidebar panel at /breadsheet with panel tokens
 │   ├── llm_api.py         # M4: Breadsheet LLM API and its tools
 │   ├── diagnostics.py     # Redacted diagnostics
-│   ├── strings.json       # UI strings
-│   └── translations/
+│   ├── brand/             # icon.png and icon@2x.png (Marketplace and HA's brands proxy)
+│   └── translations/en.json  # UI strings (custom integrations don't use strings.json)
 ├── blueprints/automation/breadsheet/
 │   └── bake_notifications.yaml
 ├── tests/
@@ -148,6 +151,21 @@ Inputs: notify targets, lead time (default 2 minutes), Live Activities on or off
 - New community repos are submitted through the `hacs/default` repository. Check the
   Marketplace contributor docs (contributors.home-assistant.io/marketplace) for current
   manifest requirements before the first release.
+
+## Development
+```bash
+uv venv --python 3.14 .venv && uv pip install --python .venv/bin/python -r requirements_test.txt
+.venv/bin/python -m pytest --cov=custom_components.breadsheet --cov-report=term-missing
+```
+- `pytest-homeassistant-custom-component` trails HA releases; check which `homeassistant` it pins.
+- hassfest locally: `docker run --rm --platform linux/amd64 -v "$PWD":/github/workspace ghcr.io/home-assistant/hassfest`.
+- **Throwaway HA** (never the household HA): a `ghcr.io/home-assistant/home-assistant` container named
+  `breadsheet-hass-dev` on port 8123, config in the git-ignored `.ha-config/` (its generated login is in
+  `.ha-config/dev-credentials.txt`), with `custom_components/breadsheet` mounted read-only and
+  `BREADSHEET_API_URL=http://host.docker.internal:5050` pointing it at the local backend. Restart the container
+  after code changes.
+- `BREADSHEET_API_URL` is the only way to pair against a non-production backend. It's read when pairing and
+  saved in the config entry.
 
 ## Coding Conventions
 - Async only. Never block the event loop; no `requests`, no synchronous I/O.
