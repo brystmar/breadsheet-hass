@@ -1,7 +1,13 @@
 {
   "domain": "breadsheet",
   "name": "Breadsheet",
-  "codeowners": ["@brystmar"],
+  "categories": [
+    "productivity_information.calendars_todos",
+    "appliances_cleaning.cooking"
+  ],
+  "codeowners": [
+    "@brystmar"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/brystmar/breadsheet-hass",
