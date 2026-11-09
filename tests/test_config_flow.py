@@ -163,3 +163,25 @@ async def test_reauth_keeps_the_entrys_api_url(hass: HomeAssistant, aioclient_mo
     result = await submit(hass, result)
     assert result["reason"] == "reauth_successful"
     assert mock_config_entry.data[CONF_API_URL] == DEFAULT_API_URL
+
+
+@pytest.mark.usefixtures("mock_setup_entry")
+async def test_the_lead_time_option(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
+    from custom_components.breadsheet.const import CONF_LEAD_MINUTES
+    mock_config_entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    assert (result["type"], result["step_id"]) == (FlowResultType.FORM, "init")
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_LEAD_MINUTES: 5})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.options == {CONF_LEAD_MINUTES: 5}
+
+
+@pytest.mark.usefixtures("mock_setup_entry")
+async def test_the_lead_time_has_limits(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
+    from homeassistant.data_entry_flow import InvalidData
+    from custom_components.breadsheet.const import CONF_LEAD_MINUTES
+    mock_config_entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(result["flow_id"], {CONF_LEAD_MINUTES: 61})

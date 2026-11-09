@@ -1,0 +1,23 @@
+{
+  "entity": {
+    "calendar": {
+      "bakes": {
+        "default": "mdi:calendar-clock"
+      }
+    },
+    "sensor": {
+      "current_step": {
+        "default": "mdi:bread-slice"
+      },
+      "next_step": {
+        "default": "mdi:debug-step-over"
+      },
+      "next_step_time": {
+        "default": "mdi:timer-sand"
+      },
+      "progress": {
+        "default": "mdi:progress-check"
+      }
+    }
+  }
+}

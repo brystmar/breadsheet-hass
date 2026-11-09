@@ -13,13 +13,14 @@ from typing import Any
 
 import probatio
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.const import CONF_TOKEN
+from homeassistant.core import callback
 
 from . import async_create_client
 from .api import BreadsheetApiError, BreadsheetConnectionError, BreadsheetError, Pairing
-from .const import (CONF_API_URL, CONF_CONNECTION_ID, CONF_PAIRING_CODE, DEFAULT_API_URL, DOMAIN, ENV_API_URL,
-                    LABEL_MAX_LENGTH, PROFILE_URL)
+from .const import (CONF_API_URL, CONF_CONNECTION_ID, CONF_LEAD_MINUTES, CONF_PAIRING_CODE, DEFAULT_API_URL,
+                    DEFAULT_LEAD_MINUTES, DOMAIN, ENV_API_URL, LABEL_MAX_LENGTH, MAX_LEAD_MINUTES, PROFILE_URL)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,11 @@ class BreadsheetConfigFlow(ConfigFlow, domain=DOMAIN):
     """Pair a breadsheet account. One config entry per breadsheet account, keyed on its user id."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> BreadsheetOptionsFlow:
+        return BreadsheetOptionsFlow()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Ask for a pairing code and exchange it for a device token."""
@@ -103,3 +109,15 @@ class BreadsheetConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected response while pairing")
             errors["base"] = "unknown"
         return None
+
+
+class BreadsheetOptionsFlow(OptionsFlowWithReload):
+    """How long before each step `breadsheet_step_upcoming` fires. Saving reloads the entry, which re-times events."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        current = self.config_entry.options.get(CONF_LEAD_MINUTES, DEFAULT_LEAD_MINUTES)
+        schema = probatio.Schema({probatio.Required(CONF_LEAD_MINUTES, default=current): probatio.All(
+            probatio.Coerce(int), probatio.Range(min=0, max=MAX_LEAD_MINUTES))})
+        return self.async_show_form(step_id="init", data_schema=schema)
