@@ -19,6 +19,20 @@ PROFILE_URL: Final = "https://www.breadsheet.com/profile"
 # `bake_id`. The blueprint clears that bake's Live Activity on it.
 EVENT_BAKE_ENDED: Final = "breadsheet_bake_ended"
 
+# Step events, timed by the integration from the current schedule (spec: HA integration, Entities). Calendar
+# triggers can't do this: they read events in 15-minute windows and never re-read them.
+EVENT_STEP_UPCOMING: Final = "breadsheet_step_upcoming"
+EVENT_STEP_DUE: Final = "breadsheet_step_due"
+EVENT_STEP_LATE: Final = "breadsheet_step_late"
+
+# Options
+CONF_LEAD_MINUTES: Final = "lead_minutes"
+DEFAULT_LEAD_MINUTES: Final = 2
+MAX_LEAD_MINUTES: Final = 60
+
+# The bake page for a bake path (only for the production API; a dev backend has no matching site)
+WEB_URL: Final = "https://www.breadsheet.com"
+
 # Config entry data
 CONF_API_URL: Final = "api_url"
 CONF_CONNECTION_ID: Final = "connection_id"

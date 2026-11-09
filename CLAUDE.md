@@ -29,8 +29,13 @@ into this repo; if it needs changes, say so and stop.
 - breadsheet-hass#2: `coordinator.py` polls active Fancy bakes with ETags at breadsheet's suggested interval
   (60 to 1800 seconds), keeps the last good bakes through outages (`bake_available()` for entities), saves them
   with `Store` so a restart during an outage carries on, and fires `breadsheet_bake_ended`. Setup keeps a
-  listener of its own, since DataUpdateCoordinator only polls while something listens. No entities yet
-  (breadsheet-hass#3).
+  listener of its own, since DataUpdateCoordinator only polls while something listens.
+- breadsheet-hass#3: a "Bakes" calendar on the account device; one device per active bake (removed when it
+  ends) with current step, next step, next step time, and progress sensors; and step events
+  (`breadsheet_step_upcoming`, `_due`, `_late`) timed by `step_events.py`, with the lead time as an option.
+  Don't build alerts on calendar triggers: they read events 15 minutes at a time and never re-read them.
+  `DataUpdateCoordinator` skips listeners after a second failed poll in a row, so the coordinator sets its own
+  timer for the next projected end so entities can go unavailable during an outage.
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools

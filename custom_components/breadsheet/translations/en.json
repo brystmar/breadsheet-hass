@@ -40,5 +40,39 @@
     "update_failed": {
       "message": "Couldn't update bakes from breadsheet: {error}"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Step alerts",
+        "data": {
+          "lead_minutes": "Minutes of warning before each step"
+        },
+        "data_description": {
+          "lead_minutes": "When the breadsheet_step_upcoming event fires, before each step is due. 0 turns it off."
+        }
+      }
+    }
+  },
+  "entity": {
+    "calendar": {
+      "bakes": {
+        "name": "Bakes"
+      }
+    },
+    "sensor": {
+      "current_step": {
+        "name": "Current step"
+      },
+      "next_step": {
+        "name": "Next step"
+      },
+      "next_step_time": {
+        "name": "Next step time"
+      },
+      "progress": {
+        "name": "Progress"
+      }
+    }
   }
 }

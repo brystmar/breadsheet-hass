@@ -20,8 +20,9 @@ from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -66,6 +67,8 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
         # Whether the last poll reached breadsheet. Not last_update_success, which is also True while running
         # from saved bakes after a restart during an outage.
         self._synced = False
+        self._unsub_stale: CALLBACK_TYPE | None = None
+        entry.async_on_unload(self._cancel_stale_check)
 
     def bake_available(self, bake: Bake) -> bool:
         """Entities stay available through failed polls until the bake's projected end."""
@@ -95,6 +98,7 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
                 _LOGGER.warning("Couldn't reach breadsheet; using the bakes saved at %s", self._saved.last_synced)
                 self.update_interval = timedelta(seconds=MIN_INTERVAL)
                 self._synced = False
+                self._watch_for_stale_bakes(self._saved)
                 return self._saved
             raise UpdateFailed(translation_domain=DOMAIN, translation_key="update_failed",
                                translation_placeholders={"error": str(err)},
@@ -119,7 +123,34 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
                                           "bakes": result.bakes})
         self._saved = None
         self._synced = True
+        self._watch_for_stale_bakes(state)
         return state
+
+    @callback
+    def _watch_for_stale_bakes(self, state: BreadsheetState) -> None:
+        """
+        Tell entities when a bake passes its projected end, so they can go unavailable during an outage.
+        DataUpdateCoordinator doesn't notify listeners after a second failure in a row, so nothing else would.
+        """
+        self._cancel_stale_check()
+        now = dt_util.utcnow()
+        ends = [bake.projected_end for bake in state.bakes.values() if bake.projected_end >= now]
+        if ends:
+            self._unsub_stale = async_track_point_in_utc_time(
+                self.hass, self._bake_went_stale, min(ends) + timedelta(seconds=1))
+
+    @callback
+    def _bake_went_stale(self, _now: datetime) -> None:
+        self._unsub_stale = None
+        self.async_update_listeners()
+        if self.data is not None:
+            self._watch_for_stale_bakes(self.data)
+
+    @callback
+    def _cancel_stale_check(self) -> None:
+        if self._unsub_stale is not None:
+            self._unsub_stale()
+            self._unsub_stale = None
 
     def _set_interval(self, suggested: int | None, bakes: dict[str, Bake]) -> None:
         seconds = suggested if suggested is not None else (ACTIVE_INTERVAL if bakes else IDLE_INTERVAL)
