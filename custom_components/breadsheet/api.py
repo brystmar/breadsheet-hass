@@ -9,9 +9,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from http import HTTPStatus
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -127,6 +129,18 @@ class BreadsheetClient:
         if not isinstance(bakes, list) or not all(isinstance(bake, dict) for bake in bakes):
             raise BreadsheetConnectionError("Breadsheet's bake list was missing or malformed")
         return BakeList(bakes=bakes, etag=new_etag, poll_interval=interval)
+
+    async def complete_step(self, bake_id: str, position: int, completed_at: datetime) -> dict[str, Any]:
+        """
+        Check off a step at the moment it happened. First write wins, so repeating it (a retry after an outage)
+        changes nothing and keeps the original time.
+        """
+        body = await self._request("POST", f"/bakes/{quote(bake_id, safe='')}/steps/{position}/complete",
+                                   json={"completed_at": completed_at.isoformat()})
+        bake = body.get("bake")
+        if not isinstance(bake, dict):
+            raise BreadsheetConnectionError("Breadsheet's check-off response had no bake")
+        return bake
 
     async def _request(self, method: str, path: str, *, json: dict[str, Any] | None = None,
                        authenticated: bool = True) -> dict[str, Any]:

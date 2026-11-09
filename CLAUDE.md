@@ -36,6 +36,11 @@ into this repo; if it needs changes, say so and stop.
   Don't build alerts on calendar triggers: they read events 15 minutes at a time and never re-read them.
   `DataUpdateCoordinator` skips listeners after a second failed poll in a row, so the coordinator sets its own
   timer for the next projected end so entities can go unavailable during an outage.
+- breadsheet-hass#4: `breadsheet.complete_step` (`services.py`, registered in `async_setup`) records the tap time,
+  re-projects locally with `steps.with_check_off()` (mirrors the backend's `Bake.project()`; keep them in step),
+  and sends it through `checkoffs.py`: a Store-backed queue retried with backoff (15 s to 5 min, honoring
+  `Retry-After`), re-applied to every poll until delivered, dropped when breadsheet refuses it, kept on
+  `token_invalid`, and given up after two days.
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools

@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
@@ -33,6 +33,7 @@ from .models import Bake, parse_bakes
 
 if TYPE_CHECKING:
     from . import BreadsheetConfigEntry
+    from .checkoffs import CheckOffs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,10 +57,13 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
 
     config_entry: BreadsheetConfigEntry
 
-    def __init__(self, hass: HomeAssistant, entry: BreadsheetConfigEntry, client: BreadsheetClient) -> None:
+    def __init__(self, hass: HomeAssistant, entry: BreadsheetConfigEntry, client: BreadsheetClient,
+                 checkoffs: CheckOffs) -> None:
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN,
                          update_interval=timedelta(seconds=IDLE_INTERVAL))
         self.client = client
+        # Check-offs not yet delivered are applied to every set of bakes, so polls can't undo them
+        self.checkoffs = checkoffs
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, storage_key(entry.entry_id))
         self._etag: str | None = None
         # What was saved before this run, until the first successful poll replaces it
@@ -98,8 +102,9 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
                 _LOGGER.warning("Couldn't reach breadsheet; using the bakes saved at %s", self._saved.last_synced)
                 self.update_interval = timedelta(seconds=MIN_INTERVAL)
                 self._synced = False
-                self._watch_for_stale_bakes(self._saved)
-                return self._saved
+                state = replace(self._saved, bakes=self.checkoffs.apply(self._saved.bakes))
+                self._watch_for_stale_bakes(state)
+                return state
             raise UpdateFailed(translation_domain=DOMAIN, translation_key="update_failed",
                                translation_placeholders={"error": str(err)},
                                retry_after=getattr(err, "retry_after", None)) from err
@@ -113,7 +118,7 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
                 raise UpdateFailed(translation_domain=DOMAIN, translation_key="update_failed",
                                    translation_placeholders={"error": str(err)}) from err
 
-        state = BreadsheetState(bakes=bakes, last_synced=dt_util.utcnow())
+        state = BreadsheetState(bakes=self.checkoffs.apply(bakes), last_synced=dt_util.utcnow())
         self._etag = result.etag
         self._set_interval(result.poll_interval, bakes)
         if result.bakes is not None:
@@ -125,6 +130,18 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
         self._synced = True
         self._watch_for_stale_bakes(state)
         return state
+
+    @callback
+    def async_apply_local_changes(self) -> None:
+        """
+        Show a new check-off at once. Not async_set_updated_data(), which would also mark the last poll as a
+        success and restart the poll timer.
+        """
+        if self.data is None:
+            return
+        self.data = replace(self.data, bakes=self.checkoffs.apply(self.data.bakes))
+        self._watch_for_stale_bakes(self.data)
+        self.async_update_listeners()
 
     @callback
     def _watch_for_stale_bakes(self, state: BreadsheetState) -> None:

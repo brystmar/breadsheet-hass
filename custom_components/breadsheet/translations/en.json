@@ -39,6 +39,12 @@
     },
     "update_failed": {
       "message": "Couldn't update bakes from breadsheet: {error}"
+    },
+    "unknown_bake": {
+      "message": "No active Fancy bake has the ID {bake_id}. It may have ended."
+    },
+    "unknown_step": {
+      "message": "{bake} has no step {position}."
     }
   },
   "options": {
@@ -72,6 +78,22 @@
       },
       "progress": {
         "name": "Progress"
+      }
+    }
+  },
+  "services": {
+    "complete_step": {
+      "name": "Complete step",
+      "description": "Checks off a step of an active Fancy bake now. The schedule updates at once; if breadsheet can't be reached, the check-off is saved and sent later with its original time.",
+      "fields": {
+        "bake_id": {
+          "name": "Bake ID",
+          "description": "The bake, as in the step events' bake_id or a bake sensor's bake_id attribute."
+        },
+        "position": {
+          "name": "Step",
+          "description": "The step's position in the bake, from 1."
+        }
       }
     }
   }
