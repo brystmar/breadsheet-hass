@@ -1,0 +1,20 @@
+{
+  "domain": "breadsheet",
+  "name": "Breadsheet",
+  "categories": [
+    "productivity_information.calendars_todos",
+    "appliances_cleaning.cooking"
+  ],
+  "codeowners": [
+    "@brystmar"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/brystmar/breadsheet-hass",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/brystmar/breadsheet-hass/issues",
+  "requirements": [],
+  "single_config_entry": false,
+  "version": "0.1.0"
+}

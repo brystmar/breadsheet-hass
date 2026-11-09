@@ -1,0 +1,7 @@
+{
+  "name": "Breadsheet",
+  "filename": "breadsheet.zip",
+  "homeassistant": "2026.11.0",
+  "render_readme": true,
+  "zip_release": true
+}
