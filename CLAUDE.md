@@ -88,10 +88,12 @@ breadsheet-hass/
   entry. The user's breadsheet key never enters HA.
 - **Auth.** Every API call sends the device token as a bearer header. The token carries
   all four scopes (`recipes:read`, `recipes:write`, `bakes:read`, `bakes:write`).
-- **Data flow is outbound only.** The integration polls breadsheet; breadsheet never
-  connects to HA. No webhooks.
+- **Data flows from breadsheet only when HA asks.** The integration pulls everything with its
+  device token. Breadsheet's only call to HA is a webhook nudge with no content ("poll now")
+  after a Fancy bake changes, to the URL HA registers with `PUT /api/v2/device/webhook`
+  (planned; spec: API v2, Webhook nudges). Polling stays the fallback.
 - **Polling.** `GET /api/v2/bakes?status=active&alert=fancy` every 60 seconds while a
-  Fancy bake is active, every 15 to 30 minutes otherwise. Honor the server's suggested
+  Fancy bake is active, every 2 minutes otherwise. Honor the server's suggested
   interval, its ETag, and any `Retry-After`. Idle polls must stay cheap: they're what
   keep the backend's database asleep.
 - **Only Fancy bakes** reach HA. Simple bakes never appear.

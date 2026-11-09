@@ -70,7 +70,7 @@ class TestPolling:
 
     @pytest.mark.parametrize(("suggested", "bakes", "expected"), [
         (60, [bake_json()], 60), (900, [], 900), (5, [], 60), (99999, [], 1800),
-        (None, [bake_json()], 60), (None, [], 900),
+        (None, [bake_json()], 60), (None, [], 120),
     ])
     async def test_the_interval_follows_breadsheet_within_limits(
             self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,
