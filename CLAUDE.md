@@ -53,6 +53,13 @@ into this repo; if it needs changes, say so and stop.
   `breadsheet.complete_step`. Mode `queued` with a 1.5 s pause spaces same-minute steps. Users import it from its
   GitHub URL (the Marketplace zip holds only `custom_components/breadsheet`); the README link comes with #8.
   `tests/test_blueprint.py` runs it as a real automation.
+- breadsheet-hass#7: the blueprint's `live_activities` input (off by default) keeps one card per bake (tag
+  `breadsheet_<bake id>`, `live_update: true`) counting down to the next step. It moves on with the integration's
+  `breadsheet_bake_changed` event (fired from `step_events.py` when a bake appears or its next step, time, or
+  progress changes, including web check-offs), clears before waits over 4 hours, comes back with the
+  `breadsheet_step_upcoming` before the next step, skips steps due within a minute, and clears on
+  `breadsheet_bake_ended`. Every update sends `silent` and `alert_once` (iOS ignores `silent` on a start). Not yet
+  checked on a real phone: see the Android test plan on breadsheet-hass#7.
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools
@@ -143,8 +150,7 @@ A running bake must survive a breadsheet outage of minutes to an hour.
 - Missing detail means unknown, never zero: a null `active_seconds` is not 0.
 
 ## Blueprint
-Inputs: notify targets, warn before each step (on), remind when late (on); Live Activities on or off comes
-with breadsheet-hass#7. It triggers on the integration's step events, so the lead time is the integration's
+Inputs: notify targets, warn before each step (on), remind when late (on), Live Activities (off). It triggers on the integration's step events, so the lead time is the integration's
 option, not a blueprint input.
 - A notification before and at each step, with a Done action calling
   `breadsheet.complete_step`.

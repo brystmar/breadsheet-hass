@@ -20,10 +20,10 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util import dt as dt_util
 
-from .const import EVENT_STEP_DUE, EVENT_STEP_LATE, EVENT_STEP_UPCOMING
+from .const import EVENT_BAKE_CHANGED, EVENT_STEP_DUE, EVENT_STEP_LATE, EVENT_STEP_UPCOMING
 from .coordinator import BreadsheetCoordinator
 from .models import Bake, BakeStep
-from .steps import progress, step_after
+from .steps import next_step, progress, step_after
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +32,22 @@ LATE_AFTER = timedelta(minutes=5)
 CATCH_UP = timedelta(seconds=60)
 
 type EventKey = tuple[str, int, str, str]  # bake id, step position, event type, scheduled time
+
+
+def bake_changed_data(bake: Bake) -> dict[str, Any]:
+    """What a Live Activity shows: the bake, its next step and when, and progress."""
+    upcoming = next_step(bake)
+    done, total = progress(bake)
+    return {
+        "bake_id": bake.id,
+        "bake_name": bake.name,
+        "bake_path": bake.path,
+        "next_position": upcoming.position if upcoming else None,
+        "next_text": upcoming.text if upcoming else None,
+        "next_scheduled_at": upcoming.scheduled_at.isoformat() if upcoming and upcoming.scheduled_at else None,
+        "steps_done": done,
+        "steps_total": total,
+    }
 
 
 def step_event_data(bake: Bake, step: BakeStep) -> dict[str, Any]:
@@ -64,6 +80,7 @@ class StepEvents:
         self._lead = lead
         self._timers: list[CALLBACK_TYPE] = []
         self._fired: set[EventKey] = set()
+        self._cards: dict[str, dict[str, Any]] = {}  # the last breadsheet_bake_changed data, by bake
 
     @callback
     def async_start(self) -> Callable[[], None]:
@@ -87,6 +104,7 @@ class StepEvents:
         state = self._coordinator.data
         if state is None:
             return
+        self._announce_changes(state.bakes)
         now = dt_util.utcnow()
         current: set[EventKey] = set()
         # One timer per moment, firing its events in bake and step order: separate timers for the same moment
@@ -111,6 +129,16 @@ class StepEvents:
         for at, keys in due.items():
             self._timers.append(async_track_point_in_utc_time(self._hass, self._make_handler(keys), at))
         self._fired &= current  # forget steps that are done, moved, or gone
+
+    def _announce_changes(self, bakes: dict[str, Bake]) -> None:
+        """Fire breadsheet_bake_changed for each bake that's new, or whose next step or progress moved."""
+        for bake in bakes.values():
+            data = bake_changed_data(bake)
+            if self._cards.get(bake.id) != data:
+                self._cards[bake.id] = data
+                self._hass.bus.async_fire(EVENT_BAKE_CHANGED, data)
+        for bake_id in self._cards.keys() - bakes.keys():
+            del self._cards[bake_id]
 
     def _times(self, scheduled_at: datetime) -> list[tuple[str, datetime]]:
         times = [(EVENT_STEP_DUE, scheduled_at), (EVENT_STEP_LATE, scheduled_at + LATE_AFTER)]
