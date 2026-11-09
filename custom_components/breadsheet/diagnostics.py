@@ -9,9 +9,9 @@ from homeassistant.const import CONF_TOKEN
 from homeassistant.core import HomeAssistant
 
 from . import BreadsheetConfigEntry
-from .const import CONF_API_URL, DEFAULT_API_URL
+from .const import CONF_API_URL, CONF_WEBHOOK_ID, DEFAULT_API_URL
 
-TO_REDACT = {CONF_TOKEN, CONF_API_URL}
+TO_REDACT = {CONF_TOKEN, CONF_API_URL, CONF_WEBHOOK_ID}  # the webhook id is the secret part of its address
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: BreadsheetConfigEntry) -> dict[str, Any]:
@@ -22,6 +22,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Breadsh
         "entry_data": async_redact_data(dict(entry.data), TO_REDACT),
         # A development API URL may name a private host, so say only whether it's the production one
         "api_url_is_default": entry.data.get(CONF_API_URL) == DEFAULT_API_URL,
+        # Which kind of address breadsheet nudges (cloud, external, or none: polling only); never the address
+        "webhook": entry.runtime_data.nudges.kind,
         # Counts and times only: bake names and step text come from people's recipes
         "coordinator": {
             "last_update_success": coordinator.last_update_success,

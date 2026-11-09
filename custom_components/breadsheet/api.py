@@ -142,6 +142,15 @@ class BreadsheetClient:
             raise BreadsheetConnectionError("Breadsheet's check-off response had no bake")
         return bake
 
+    async def set_webhook(self, url: str) -> None:
+        """Where breadsheet should send this HA its "poll now" nudges. Refused (`webhook_url_invalid`) unless it's
+        an https URL on port 443 at a public address."""
+        await self._request("PUT", "/device/webhook", json={"url": url})
+
+    async def clear_webhook(self) -> None:
+        """Stop breadsheet's nudges to this HA."""
+        await self._request("DELETE", "/device/webhook")
+
     async def _request(self, method: str, path: str, *, json: dict[str, Any] | None = None,
                        authenticated: bool = True) -> dict[str, Any]:
         return (await self._send(method, path, json=json, authenticated=authenticated)).body

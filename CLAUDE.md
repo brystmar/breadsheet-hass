@@ -41,6 +41,12 @@ into this repo; if it needs changes, say so and stop.
   and sends it through `checkoffs.py`: a Store-backed queue retried with backoff (15 s to 5 min, honoring
   `Retry-After`), re-applied to every poll until delivered, dropped when breadsheet refuses it, kept on
   `token_invalid`, and given up after two days.
+- breadsheet-hass#13: `nudges.py` registers an HA webhook (id kept in the entry's data) and sends breadsheet its
+  address with `PUT /api/v2/device/webhook`: a Cloud cloudhook if subscribed, else the external https URL on 443,
+  else it clears the webhook and HA just polls. Re-registers when Cloud connects or the cloudhook changes, and
+  after the next good poll if breadsheet was down. A nudge (body ignored) calls `async_request_refresh()`.
+  Cloud can't be imported in tests (missing packages), so `cloud_component()` imports it only when it's loaded,
+  and tests replace it. Never log the webhook address or id.
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools

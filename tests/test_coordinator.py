@@ -49,6 +49,11 @@ def answer(aioclient_mock: AiohttpClientMocker, *args: Any, **kwargs: Any) -> No
     mock_bakes(aioclient_mock, *args, **kwargs)
 
 
+def polls(aioclient_mock: AiohttpClientMocker) -> int:
+    """How many bake polls were made (setup also registers or clears the webhook)."""
+    return sum(1 for call in aioclient_mock.mock_calls if call[0] == "GET")
+
+
 def saved(hass_storage: dict[str, Any], entry: MockConfigEntry) -> dict[str, Any]:
     return hass_storage[storage_key(entry.entry_id)]["data"]
 
@@ -85,9 +90,9 @@ class TestPolling:
         mock_bakes(aioclient_mock, [], interval=900)
         await set_up(hass, mock_config_entry)
         await wait(hass, frozen, 600)
-        assert aioclient_mock.call_count == 1
+        assert polls(aioclient_mock) == 1
         await wait(hass, frozen, 301)
-        assert aioclient_mock.call_count == 2
+        assert polls(aioclient_mock) == 2
 
     async def test_an_unchanged_list_is_a_cheap_304(
             self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,

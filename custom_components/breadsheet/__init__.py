@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
+from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant, callback
@@ -16,8 +17,9 @@ from homeassistant.loader import async_get_integration
 
 from .api import BreadsheetClient
 from .checkoffs import CheckOffs, async_remove_checkoffs
-from .const import CONF_API_URL, CONF_LEAD_MINUTES, DEFAULT_LEAD_MINUTES, DOMAIN
+from .const import CONF_API_URL, CONF_LEAD_MINUTES, CONF_WEBHOOK_ID, DEFAULT_LEAD_MINUTES, DOMAIN
 from .coordinator import STORAGE_VERSION, BreadsheetCoordinator, storage_key
+from .nudges import WebhookNudges, async_remove_webhook
 from .services import async_setup_services
 from .step_events import StepEvents
 
@@ -32,6 +34,7 @@ class BreadsheetData:
     client: BreadsheetClient
     coordinator: BreadsheetCoordinator
     checkoffs: CheckOffs
+    nudges: WebhookNudges
 
 
 type BreadsheetConfigEntry = ConfigEntry[BreadsheetData]
@@ -57,7 +60,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -
     await checkoffs.async_load()
     coordinator = BreadsheetCoordinator(hass, entry, client, checkoffs)
     await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = BreadsheetData(client=client, coordinator=coordinator, checkoffs=checkoffs)
+    if CONF_WEBHOOK_ID not in entry.data:
+        hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_WEBHOOK_ID: webhook.async_generate_id()})
+    nudges = WebhookNudges(hass, entry, client, coordinator)
+    entry.runtime_data = BreadsheetData(client=client, coordinator=coordinator, checkoffs=checkoffs, nudges=nudges)
+    entry.async_on_unload(await nudges.async_start())
     entry.async_on_unload(checkoffs.async_start(coordinator))
 
     # Listeners also keep the coordinator polling (it only polls while something listens), so
@@ -93,6 +100,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -> None:
-    """Delete the saved bakes and any undelivered check-offs when the integration is removed."""
+    """When the integration is removed: delete the saved bakes and undelivered check-offs, and stop nudges."""
     await Store(hass, STORAGE_VERSION, storage_key(entry.entry_id)).async_remove()
     await async_remove_checkoffs(hass, entry.entry_id)
+    client = await async_create_client(hass, entry.data[CONF_API_URL], entry.data[CONF_TOKEN])
+    await async_remove_webhook(hass, client, entry.data.get(CONF_WEBHOOK_ID))

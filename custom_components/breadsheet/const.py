@@ -37,6 +37,7 @@ WEB_URL: Final = "https://www.breadsheet.com"
 CONF_API_URL: Final = "api_url"
 CONF_CONNECTION_ID: Final = "connection_id"
 CONF_PAIRING_CODE: Final = "pairing_code"
+CONF_WEBHOOK_ID: Final = "webhook_id"
 
 # The label breadsheet shows in the user's connections list is capped at this many characters
 LABEL_MAX_LENGTH: Final = 60

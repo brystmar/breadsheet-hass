@@ -1,6 +1,9 @@
 {
   "domain": "breadsheet",
   "name": "Breadsheet",
+  "after_dependencies": [
+    "cloud"
+  ],
   "categories": [
     "productivity_information.calendars_todos",
     "appliances_cleaning.cooking"
@@ -9,7 +12,9 @@
     "@brystmar"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "webhook"
+  ],
   "documentation": "https://github.com/brystmar/breadsheet-hass",
   "integration_type": "service",
   "iot_class": "cloud_polling",

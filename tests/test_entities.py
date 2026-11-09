@@ -165,6 +165,7 @@ class TestSensors:
         from custom_components.breadsheet.const import CONF_API_URL
         entry = MockConfigEntry(domain=DOMAIN, title="baker", unique_id="dev-user",
                                 data={CONF_API_URL: "http://localhost:5050", CONF_TOKEN: "t"})
+        aioclient_mock.delete("http://localhost:5050/api/v2/device/webhook", status=204)
         aioclient_mock.get("http://localhost:5050/api/v2/bakes?status=active&alert=fancy",
                            json={"bakes": [bake_json()]}, headers={"X-Breadsheet-Poll-Interval": "60"})
         await set_up(hass, entry)
