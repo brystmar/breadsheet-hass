@@ -47,6 +47,12 @@ into this repo; if it needs changes, say so and stop.
   after the next good poll if breadsheet was down. A nudge (body ignored) calls `async_request_refresh()`.
   Cloud can't be imported in tests (missing packages), so `cloud_component()` imports it only when it's loaded,
   and tests replace it. Never log the webhook address or id.
+- breadsheet-hass#6: `blueprints/automation/breadsheet/bake_notifications.yaml` notifies on the step events
+  (upcoming and late can each be turned off), one notification per step via `tag`, with a Done button whose action
+  id is `BREADSHEET_DONE|<bake id>|<position>`; the blueprint's `mobile_app_notification_action` trigger calls
+  `breadsheet.complete_step`. Mode `queued` with a 1.5 s pause spaces same-minute steps. Users import it from its
+  GitHub URL (the Marketplace zip holds only `custom_components/breadsheet`); the README link comes with #8.
+  `tests/test_blueprint.py` runs it as a real automation.
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools
@@ -137,7 +143,9 @@ A running bake must survive a breadsheet outage of minutes to an hour.
 - Missing detail means unknown, never zero: a null `active_seconds` is not 0.
 
 ## Blueprint
-Inputs: notify targets, lead time (default 2 minutes), Live Activities on or off.
+Inputs: notify targets, warn before each step (on), remind when late (on); Live Activities on or off comes
+with breadsheet-hass#7. It triggers on the integration's step events, so the lead time is the integration's
+option, not a blueprint input.
 - A notification before and at each step, with a Done action calling
   `breadsheet.complete_step`.
 - One late reminder at +5 minutes, then nothing.

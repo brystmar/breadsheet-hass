@@ -1,0 +1,110 @@
+blueprint:
+  name: Breadsheet bake notifications
+  description: >-
+    Phone notifications for your Fancy bakes on breadsheet.com: one before each step, one when it's due, and one
+    reminder 5 minutes late, then nothing. Every notification has a Done button that checks the step off.
+    How far ahead the first one comes is the Breadsheet integration's option (Settings > Devices & services >
+    Breadsheet > Configure), 2 minutes unless you change it.
+  domain: automation
+  source_url: https://github.com/brystmar/breadsheet-hass/blob/main/blueprints/automation/breadsheet/bake_notifications.yaml
+  author: brystmar
+  homeassistant:
+    min_version: "2026.11.0"
+  input:
+    notify_services:
+      name: Phones to notify
+      description: >-
+        The notify actions of the Home Assistant companion app on each phone, such as
+        notify.mobile_app_my_phone (Developer tools > Actions lists them).
+      selector:
+        text:
+          multiple: true
+    send_upcoming:
+      name: Warn before each step
+      description: A notification ahead of each step, at the integration's lead time.
+      default: true
+      selector:
+        boolean:
+    send_late:
+      name: Remind when late
+      description: One more notification if a step still isn't done 5 minutes after it was due.
+      default: true
+      selector:
+        boolean:
+
+# Queued, with a pause after each notification: steps due in the same minute arrive as separate notifications,
+# a second or two apart, in step order (the integration fires their events in order).
+mode: queued
+max: 50
+max_exceeded: silent
+
+triggers:
+  - trigger: event
+    event_type: breadsheet_step_upcoming
+    id: upcoming
+  - trigger: event
+    event_type: breadsheet_step_due
+    id: due
+  - trigger: event
+    event_type: breadsheet_step_late
+    id: late
+  - trigger: event
+    event_type: mobile_app_notification_action
+    id: done
+
+variables:
+  notify_services: !input notify_services
+  send_upcoming: !input send_upcoming
+  send_late: !input send_late
+  # Done buttons carry the bake and step in their action id: BREADSHEET_DONE|<bake id>|<position>
+  done_parts: >-
+    {{ (trigger.event.data.action | default('')).split('|') if trigger.id == 'done' else [] }}
+
+conditions:
+  - condition: template
+    value_template: >-
+      {{ (trigger.id == 'upcoming' and send_upcoming)
+         or trigger.id == 'due'
+         or (trigger.id == 'late' and send_late)
+         or (trigger.id == 'done' and done_parts | length == 3 and done_parts[0] == 'BREADSHEET_DONE') }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: done
+        sequence:
+          - action: breadsheet.complete_step
+            data:
+              bake_id: "{{ done_parts[1] }}"
+              position: "{{ done_parts[2] | int }}"
+    default:
+      - variables:
+          step: "{{ trigger.event.data }}"
+          # Step text comes from recipes other people write: it's only ever shown, never used as a template
+          due_time: "{{ as_timestamp(step.scheduled_at) | timestamp_custom('%-I:%M %p') }}"
+          message: >-
+            {% if trigger.id == 'upcoming' %}At {{ due_time }}: {{ step.text }}
+            {% elif trigger.id == 'due' %}Now: {{ step.text }}
+            {% else %}Still to do (due {{ due_time }}): {{ step.text }}{% endif %}
+          subtitle: "Step {{ step.position }} of {{ step.steps_total }}"
+      - repeat:
+          for_each: "{{ notify_services }}"
+          sequence:
+            - action: "{{ repeat.item }}"
+              continue_on_error: true
+              data:
+                title: "{{ step.bake_name }}"
+                message: "{{ message | trim }}"
+                data:
+                  subtitle: "{{ subtitle }}"
+                  # One notification per step: the due one replaces the warning, the late one replaces both
+                  tag: "breadsheet_{{ step.bake_id }}_{{ step.position }}"
+                  group: "breadsheet_{{ step.bake_id }}"
+                  url: "/breadsheet/{{ step.bake_id }}"
+                  clickAction: "/breadsheet/{{ step.bake_id }}"
+                  actions:
+                    - action: "BREADSHEET_DONE|{{ step.bake_id }}|{{ step.position }}"
+                      title: Done
+      - delay:
+          milliseconds: 1500
