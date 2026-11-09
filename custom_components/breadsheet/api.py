@@ -7,6 +7,7 @@ branch on error `code`, never on `message`, and ignore response fields this clie
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 import logging
@@ -56,6 +57,31 @@ class Pairing:
     username: str
 
 
+@dataclass(frozen=True, slots=True)
+class BakeList:
+    """One poll of the active Fancy bakes. `bakes` is None when nothing changed since `etag` (a 304)."""
+
+    bakes: list[dict[str, Any]] | None
+    etag: str | None
+    poll_interval: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _Response:
+    status: int
+    headers: Mapping[str, str]
+    body: dict[str, Any]
+
+
+def _poll_interval(headers: Mapping[str, str]) -> int | None:
+    """The server's suggested seconds until the next poll (X-Breadsheet-Poll-Interval), if readable."""
+    try:
+        value = int(headers.get("X-Breadsheet-Poll-Interval", ""))
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
 def _retry_after(response: aiohttp.ClientResponse) -> int | None:
     """`Retry-After` in seconds, if the server sent one we can read. (Breadsheet sends seconds, never a date.)"""
     value = response.headers.get("Retry-After")
@@ -86,9 +112,29 @@ class BreadsheetClient:
         except (KeyError, TypeError) as err:
             raise BreadsheetError("Breadsheet's pairing response was missing fields") from err
 
+    async def active_fancy_bakes(self, etag: str | None = None) -> BakeList:
+        """
+        The active Fancy bakes, the only ones HA tracks. Sends `If-None-Match` so an unchanged list is a cheap 304;
+        idle polls like this are answered without waking breadsheet's database.
+        """
+        response = await self._send("GET", "/bakes?status=active&alert=fancy",
+                                    headers={"If-None-Match": etag} if etag else None)
+        interval = _poll_interval(response.headers)
+        new_etag = response.headers.get("ETag") or etag
+        if response.status == HTTPStatus.NOT_MODIFIED:
+            return BakeList(bakes=None, etag=new_etag, poll_interval=interval)
+        bakes = response.body.get("bakes")
+        if not isinstance(bakes, list) or not all(isinstance(bake, dict) for bake in bakes):
+            raise BreadsheetConnectionError("Breadsheet's bake list was missing or malformed")
+        return BakeList(bakes=bakes, etag=new_etag, poll_interval=interval)
+
     async def _request(self, method: str, path: str, *, json: dict[str, Any] | None = None,
                        authenticated: bool = True) -> dict[str, Any]:
-        headers = {
+        return (await self._send(method, path, json=json, authenticated=authenticated)).body
+
+    async def _send(self, method: str, path: str, *, json: dict[str, Any] | None = None,
+                    headers: Mapping[str, str] | None = None, authenticated: bool = True) -> _Response:
+        headers = {**(headers or {}),
             "Accept": "application/json",
             "User-Agent": self._user_agent,
             # Metrics only: counts this as a call from HA (agent tools send `agent` instead, from M4)
@@ -103,8 +149,8 @@ class BreadsheetClient:
         try:
             async with self._session.request(method, self._base + path, json=json, headers=headers,
                                              timeout=REQUEST_TIMEOUT) as response:
-                if response.status == HTTPStatus.NO_CONTENT:
-                    return {}
+                if response.status in (HTTPStatus.NO_CONTENT, HTTPStatus.NOT_MODIFIED):
+                    return _Response(response.status, response.headers, {})
                 if response.status >= HTTPStatus.INTERNAL_SERVER_ERROR:
                     # 503 `service_unavailable` comes with Retry-After; App Engine's own errors may not be JSON
                     raise BreadsheetConnectionError(f"Breadsheet answered {response.status}",
@@ -120,6 +166,6 @@ class BreadsheetClient:
                     message = str(body.get("message") or "")
                     error = BreadsheetAuthError if code == "token_invalid" else BreadsheetApiError
                     raise error(response.status, code, message, retry_after=_retry_after(response))
-                return body
+                return _Response(response.status, response.headers, body)
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise BreadsheetConnectionError(f"Couldn't reach breadsheet: {err.__class__.__name__}") from err

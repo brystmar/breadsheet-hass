@@ -11,6 +11,9 @@ from custom_components.breadsheet.const import CONF_API_URL, CONF_CONNECTION_ID,
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 DEVICES_URL = f"{DEFAULT_API_URL}/api/v2/devices"
+BAKES_URL = f"{DEFAULT_API_URL}/api/v2/bakes?status=active&alert=fancy"
+BAKE_ID = "0196f2a0-0000-7000-8000-0000000b0001"
+OTHER_BAKE_ID = "0196f2a0-0000-7000-8000-0000000b0002"
 USER_ID = "0196f2a0-0000-7000-8000-000000000001"
 OTHER_USER_ID = "0196f2a0-0000-7000-8000-000000000002"
 TOKEN = "test-device-token"
@@ -27,6 +30,47 @@ def pairing_response(user_id: str = USER_ID, username: str = "baker", token: str
         "user": {"id": user_id, "username": username, "created_at": "2026-11-01T00:00:00+00:00",
                  "is_admin": False},
     }
+
+
+def step_json(position: int, scheduled_at: str | None, wait: int, *, completed_at: str | None = None,
+              skipped: bool = False) -> dict:
+    """The shape of a real `bake step` from breadsheet (docs/api-v2.md)."""
+    return {
+        "position": position, "text": f"Step {position}", "note": None,
+        "wait_min": wait, "wait_max": wait, "wait_chosen": wait, "wait_outside_range": False,
+        "active_seconds": None, "needs_presence": None,
+        "hands_on": {"seconds": 600, "estimated": True, "needs_presence": True},
+        "skipped": skipped, "skipped_at": None, "skipped_at_local": None,
+        "scheduled_at": scheduled_at, "scheduled_at_local": scheduled_at,
+        "completed_at": completed_at, "completed_at_local": completed_at,
+    }
+
+
+def bake_json(bake_id: str = BAKE_ID, *, projected_end: str = "2026-11-10T02:00:00+00:00",
+              name: str = "Weekend Loaf") -> dict:
+    """The shape of a real active Fancy `bake` from breadsheet (docs/api-v2.md)."""
+    return {
+        "id": bake_id, "suffix": "abc123", "path": "/bakes/abc123", "name": name,
+        "recipe_id": "0196f2a0-0000-7000-8000-0000000a0001", "recipe_path": "/recipes/weekend-loaf",
+        "recipe_deleted": False, "anchor_type": "start", "anchor_time": "2026-11-09T18:00:00+00:00",
+        "time_zone": "America/Los_Angeles", "alert_mode": "fancy", "status": "not_started", "outcome": None,
+        "created_via": "web", "started_at": "2026-11-09T17:50:00+00:00", "completed_at": None,
+        "projected_end": projected_end, "projected_end_local": projected_end,
+        "steps": [step_json(1, "2026-11-09T18:00:00+00:00", 3600),
+                  step_json(2, "2026-11-09T19:00:00+00:00", 25200),
+                  step_json(3, "2026-11-10T02:00:00+00:00", 0)],
+    }
+
+
+def mock_bakes(aioclient_mock, bakes: list[dict] | None = None, *, interval: int | None = 900,
+               etag: str = '"etag-1"', status: int = 200, **kwargs) -> None:
+    """Breadsheet's answer to HA's poll, with its real headers."""
+    headers = {"ETag": etag}
+    if interval is not None:
+        headers["X-Breadsheet-Poll-Interval"] = str(interval)
+    if status == 200:
+        kwargs.setdefault("json", {"bakes": bakes or []})
+    aioclient_mock.get(BAKES_URL, status=status, headers=headers, **kwargs)
 
 
 def error_body(code: str, message: str = "Nope.") -> dict:

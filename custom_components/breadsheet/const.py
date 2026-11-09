@@ -15,6 +15,10 @@ ENV_API_URL: Final = "BREADSHEET_API_URL"
 # Where people get a pairing code
 PROFILE_URL: Final = "https://www.breadsheet.com/profile"
 
+# Fired when a bake leaves the active Fancy list (completed, canceled, expired, or switched to Simple), with
+# `bake_id`. The blueprint clears that bake's Live Activity on it.
+EVENT_BAKE_ENDED: Final = "breadsheet_bake_ended"
+
 # Config entry data
 CONF_API_URL: Final = "api_url"
 CONF_CONNECTION_ID: Final = "connection_id"

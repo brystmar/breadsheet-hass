@@ -32,5 +32,13 @@
       "already_configured": "This breadsheet account is already set up in Home Assistant. Pairing it again added an extra connection; remove it from your profile ({profile_url}).",
       "wrong_account": "That pairing code belongs to a different breadsheet account. Sign in as {username}, get a new code, and try again. Pairing also added a connection to the other account; remove it from that account's profile ({profile_url})."
     }
+  },
+  "exceptions": {
+    "token_revoked": {
+      "message": "Breadsheet no longer accepts this Home Assistant's connection. It was probably removed from your breadsheet profile; pair again to reconnect."
+    },
+    "update_failed": {
+      "message": "Couldn't update bakes from breadsheet: {error}"
+    }
   }
 }
