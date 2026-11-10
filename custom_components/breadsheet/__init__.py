@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
-from homeassistant.components import webhook
+from homeassistant.components import frontend, webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant, callback
@@ -20,6 +20,7 @@ from .checkoffs import CheckOffs, async_remove_checkoffs
 from .const import CONF_API_URL, CONF_LEAD_MINUTES, CONF_WEBHOOK_ID, DEFAULT_LEAD_MINUTES, DOMAIN
 from .coordinator import STORAGE_VERSION, BreadsheetCoordinator, storage_key
 from .nudges import WebhookNudges, async_remove_webhook
+from .panel import async_register_panel, async_setup_websocket
 from .services import async_setup_services
 from .step_events import StepEvents
 
@@ -50,6 +51,7 @@ async def async_create_client(hass: HomeAssistant, api_url: str, token: str | No
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the integration's actions, once for every config entry."""
     async_setup_services(hass)
+    async_setup_websocket(hass)
     return True
 
 
@@ -75,6 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -
     entry.async_on_unload(StepEvents(hass, coordinator, lead).async_start())
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_register_panel(hass)
     return True
 
 
@@ -95,8 +98,13 @@ def _remove_ended_bake_devices(hass: HomeAssistant, entry: BreadsheetConfigEntry
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -> bool:
-    """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry; the sidebar panel goes with the last one."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        # This entry still counts as loaded until this returns, so check for others
+        if not [e for e in hass.config_entries.async_loaded_entries(DOMAIN) if e.entry_id != entry.entry_id]:
+            frontend.async_remove_panel(hass, "breadsheet", warn_if_unknown=False)
+    return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: BreadsheetConfigEntry) -> None:

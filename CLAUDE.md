@@ -60,6 +60,11 @@ into this repo; if it needs changes, say so and stop.
   `breadsheet_step_upcoming` before the next step, skips steps due within a minute, and clears on
   `breadsheet_bake_ended`. Every update sends `silent` and `alert_once` (iOS ignores `silent` on a start). Not yet
   checked on a real phone: see the Android test plan on breadsheet-hass#7.
+- breadsheet-hass#5: `panel.py` registers the "Breadsheet" sidebar panel (`/breadsheet`) while an account is
+  loaded, serving `frontend/breadsheet-panel.js`. The script calls the websocket command `breadsheet/panel_url`,
+  which gets `POST /api/v2/panel-tokens` from breadsheet and returns the website's `/panel` URL with a 12-hour
+  token in its fragment, and shows it in a full-height frame; `/breadsheet/<bake id>` opens that bake. Tests
+  need `home-assistant-frontend` (in `requirements_test.txt`).
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools

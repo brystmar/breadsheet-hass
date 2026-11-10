@@ -13,7 +13,11 @@
   ],
   "config_flow": true,
   "dependencies": [
-    "webhook"
+    "frontend",
+    "http",
+    "panel_custom",
+    "webhook",
+    "websocket_api"
   ],
   "documentation": "https://github.com/brystmar/breadsheet-hass",
   "integration_type": "service",

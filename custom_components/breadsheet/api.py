@@ -142,6 +142,14 @@ class BreadsheetClient:
             raise BreadsheetConnectionError("Breadsheet's check-off response had no bake")
         return bake
 
+    async def panel_url(self, bake_id: str | None = None) -> str:
+        """The page for HA's sidebar panel: breadsheet's bake view with a fresh 12-hour panel token in its fragment."""
+        body = await self._request("POST", "/panel-tokens", json={"bake_id": bake_id} if bake_id else {})
+        url = body.get("url")
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+            raise BreadsheetConnectionError("Breadsheet's panel response had no URL")
+        return url
+
     async def set_webhook(self, url: str) -> None:
         """Where breadsheet should send this HA its "poll now" nudges. Refused (`webhook_url_invalid`) unless it's
         an https URL on port 443 at a public address."""
