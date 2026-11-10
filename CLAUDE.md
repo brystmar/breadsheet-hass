@@ -65,6 +65,8 @@ into this repo; if it needs changes, say so and stop.
   which gets `POST /api/v2/panel-tokens` from breadsheet and returns the website's `/panel` URL with a 12-hour
   token in its fragment, and shows it in a full-height frame; `/breadsheet/<bake id>` opens that bake. Tests
   need `home-assistant-frontend` (in `requirements_test.txt`).
+- breadsheet-hass#8: `README.md` (install, pairing, the blueprint import link, Live Activities requirements,
+  privacy) and `docs/releasing.md` (tagging, the release asset, the `hacs/default` submission). No release yet.
 - Config entries are keyed on the breadsheet user id, which `POST /api/v2/devices` returns as `user`. The title
   is the username.
 - Work starts in Second Rise milestone M3 (backlog items 21 through 28, plus agent tools
