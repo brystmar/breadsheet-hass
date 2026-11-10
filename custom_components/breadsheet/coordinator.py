@@ -1,7 +1,7 @@
 """Polls breadsheet for active Fancy bakes, and keeps running from the last good copy through outages.
 
 - Polls `GET /api/v2/bakes?status=active&alert=fancy` with `If-None-Match`, at the interval breadsheet suggests
-  (`X-Breadsheet-Poll-Interval`: a minute while a Fancy bake is active, 15 minutes otherwise), honoring
+  (`X-Breadsheet-Poll-Interval`: a minute while a Fancy bake is active, 2 minutes otherwise), honoring
   `Retry-After` on 429 and 503.
 - A failed poll keeps the last good bakes. DataUpdateCoordinator keeps `data` on failure but sets
   `last_update_success` False, which entities would read as unavailable; ours use `bake_available()` instead,
@@ -39,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
 ACTIVE_INTERVAL = 60  # used until breadsheet suggests one, or if it doesn't
-IDLE_INTERVAL = 900
+IDLE_INTERVAL = 120  # matches breadsheet's idle suggestion
 MIN_INTERVAL = 60  # never poll faster than this, or slower than MAX, whatever the server says
 MAX_INTERVAL = 1800
 

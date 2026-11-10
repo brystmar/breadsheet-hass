@@ -25,5 +25,5 @@
   "issue_tracker": "https://github.com/brystmar/breadsheet-hass/issues",
   "requirements": [],
   "single_config_entry": false,
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
