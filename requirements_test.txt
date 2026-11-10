@@ -1,2 +1,4 @@
 # Tracks Home Assistant releases; this version tests against homeassistant==2026.10.4
 pytest-homeassistant-custom-component==0.13.375
+# The sidebar panel depends on HA's frontend, which the test plugin doesn't install; match its version
+home-assistant-frontend==20260930.5
