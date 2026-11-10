@@ -63,7 +63,7 @@ def bake_json(bake_id: str = BAKE_ID, *, projected_end: str = "2026-11-10T02:00:
     }
 
 
-def mock_bakes(aioclient_mock, bakes: list[dict] | None = None, *, interval: int | None = 900,
+def mock_bakes(aioclient_mock, bakes: list[dict] | None = None, *, interval: int | None = 120,
                etag: str = '"etag-1"', status: int = 200, **kwargs) -> None:
     """Breadsheet's answer to HA's poll, with its real headers."""
     headers = {"ETag": etag}
