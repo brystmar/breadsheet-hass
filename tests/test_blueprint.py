@@ -71,7 +71,7 @@ async def test_a_due_step_notifies_with_a_done_button(hass: HomeAssistant, notif
 
 
 async def test_the_warning_says_when(hass: HomeAssistant, notified: list) -> None:
-    await use_blueprint(hass)
+    await use_blueprint(hass, send_upcoming=True)
     await fire(hass, "breadsheet_step_upcoming", step_event())
     assert notified[0].data["message"] == f"At {local_time('2026-11-09T19:05:00+00:00')}: Mix"
 
@@ -80,6 +80,12 @@ async def test_the_late_reminder(hass: HomeAssistant, notified: list) -> None:
     await use_blueprint(hass)
     await fire(hass, "breadsheet_step_late", step_event())
     assert notified[0].data["message"] == f"Still to do (due {local_time('2026-11-09T19:05:00+00:00')}): Mix"
+
+
+async def test_warnings_are_off_unless_turned_on(hass: HomeAssistant, notified: list) -> None:
+    await use_blueprint(hass, live_activities=False)
+    await fire(hass, "breadsheet_step_upcoming", step_event())
+    assert notified == []
 
 
 @pytest.mark.parametrize(("inputs", "event_type"), [({"send_upcoming": False}, "breadsheet_step_upcoming"),
@@ -149,8 +155,13 @@ def cards(notified: list) -> list[dict]:
 
 
 class TestLiveActivities:
-    async def test_off_unless_turned_on(self, hass: HomeAssistant, notified: list) -> None:
+    async def test_on_unless_turned_off(self, hass: HomeAssistant, notified: list) -> None:
         await use_blueprint(hass)
+        await fire(hass, "breadsheet_bake_changed", changed(at=in_minutes(30)))
+        assert len(cards(notified)) == 1
+
+    async def test_turned_off_sends_nothing(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass, live_activities=False)
         await fire(hass, "breadsheet_bake_changed", changed())
         await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID})
         assert notified == []
@@ -202,7 +213,7 @@ class TestLiveActivities:
         assert cards(notified) == [{"message": "clear_notification", "data": {"tag": f"breadsheet_{BAKE_ID}"}}]
 
     async def test_the_warning_and_the_card_both_go_out(self, hass: HomeAssistant, notified: list) -> None:
-        await use_blueprint(hass, live_activities=True)
+        await use_blueprint(hass, send_upcoming=True, live_activities=True)
         await fire(hass, "breadsheet_step_upcoming", step_event(scheduled_at=in_minutes(2)))
         assert len(notified) == 2
         assert notified[0].data["message"].startswith("At ")

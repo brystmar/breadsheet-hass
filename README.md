@@ -1,9 +1,9 @@
 # Breadsheet for Home Assistant
 
 Phone alerts for your bakes from [breadsheet.com](https://www.breadsheet.com), the scheduler for long recipes
-like sourdough. Start a bake on breadsheet.com with **Fancy** alerts, and Home Assistant tells your phone before
-each step, when it's due, and once more if you're running late. Tap **Done** on the notification to check the
-step off. On iOS and Android 16+, a lock-screen card can count down to the next step.
+like sourdough. Start a recipe on breadsheet.com with **Fancy** alerts, and Home Assistant puts a card on your
+phone's lock screen counting down to the next step (iOS and Android 16+), tells you when each step is due, and once
+more if you're running late. Tap **Done** on the notification to check the step off.
 
 <!-- ha-marketplace:exclude-start -->
 [![Open your Home Assistant instance and open this repository in the Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=brystmar&repository=breadsheet-hass&category=integration)
@@ -11,12 +11,12 @@ step off. On iOS and Android 16+, a lock-screen card can count down to the next 
 
 ## What you get
 
-- **Notifications** before each step (2 minutes ahead by default), when it's due, and one reminder 5 minutes
-  late, then nothing. Steps due in the same minute arrive separately, in order.
+- **Live Activities (iOS) and Live Updates (Android)**, on by default: one card per bake showing the next step, a
+  countdown to it, and progress.
+- **Notifications** when each step is due, and one reminder 5 minutes late, then nothing. A warning before each
+  step (2 minutes ahead by default) is optional. Steps due in the same minute arrive separately, in order.
 - **A Done button** that checks the step off on breadsheet. It works through breadsheet outages: the check-off
   is saved with the time you tapped and sent when breadsheet is back.
-- **Live Activities (iOS) and Live Updates (Android)**, optional: one card per bake showing the next step, a
-  countdown to it, and progress.
 - **A Breadsheet sidebar panel** showing your bakes inside Home Assistant, where you can check off and skip steps.
   Tapping a notification or a lock-screen card opens the bake there.
 - **Entities:** a calendar of your bake steps, and per bake a device with current step, next step, next step
@@ -62,12 +62,13 @@ Import the blueprint, then create an automation from it:
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbrystmar%2Fbreadsheet-hass%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fbreadsheet%2Fbake_notifications.yaml)
 
-- **Phones to notify:** each phone's companion-app notify action, such as `notify.mobile_app_my_phone`
-  (**Developer tools → Actions** lists them).
-- **Warn before each step** and **Remind when late:** on by default.
-- **Live Activities and Live Updates:** off by default; see below.
+- **Phones to Notify:** each phone's companion-app notify action, such as `notify.mobile_app_my_phone`
+  (**Settings → Tools → Actions** lists them).
+- **Warn Before Each Step?:** off by default.
+- **Remind When Late?:** on by default.
+- **Live Activities (iOS) and Live Updates (Android):** on by default; see below.
 
-How far ahead the warning comes is the integration's option: **Settings → Devices & services → Breadsheet →
+If you turn on warnings, how far ahead they come is the integration's option: **Settings → Devices & services → Breadsheet →
 Configure** (2 minutes by default; 0 turns warnings off).
 
 Notifications show step text from recipes, including community recipes other people wrote. Home Assistant only
@@ -75,7 +76,8 @@ displays it.
 
 ## Live Activities and Live Updates
 
-Turn on **Live Activities and Live Updates** in the blueprint. Each bake gets one lock-screen card with the next
+The blueprint's **Live Activities (iOS) and Live Updates (Android)** input is on by default; turn it off if you only
+want notifications. Each bake gets one lock-screen card with the next
 step, a countdown, and progress. The card goes away during waits longer than 4 hours (Apple limits a Live
 Activity to 8 hours) and comes back just before the next step. It clears when the bake ends.
 
