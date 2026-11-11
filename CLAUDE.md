@@ -203,11 +203,27 @@ uv venv --python 3.14 .venv && uv pip install --python .venv/bin/python -r requi
 ```
 - `pytest-homeassistant-custom-component` trails HA releases; check which `homeassistant` it pins.
 - hassfest locally: `docker run --rm --platform linux/amd64 -v "$PWD":/github/workspace ghcr.io/home-assistant/hassfest`.
-- **Throwaway HA** (never the household HA): a `ghcr.io/home-assistant/home-assistant` container named
-  `breadsheet-hass-dev` on port 8123, config in the git-ignored `.ha-config/` (its generated login is in
-  `.ha-config/dev-credentials.txt`), with `custom_components/breadsheet` mounted read-only and
-  `BREADSHEET_API_URL=http://host.docker.internal:5050` pointing it at the local backend. Restart the container
-  after code changes.
+- **Test Home Assistants** (breadsheet-hass#21; never the household HA): the Compose stack in `dev/compose.yaml`,
+  both on the same pinned HA image. Their config, logins and pairings live in git-ignored folders at the repo root,
+  so recreating a container loses nothing. Optional `TZ` (log times only) goes in the git-ignored `dev/.env`.
+  ```bash
+  docker compose -f dev/compose.yaml up -d            # start both, or apply compose changes
+  docker compose -f dev/compose.yaml restart ha-dev   # after changing custom_components/breadsheet
+  ```
+  - **`ha-dev`** (`breadsheet-hass-dev`, http://localhost:8123): this checkout's `custom_components/breadsheet`,
+    mounted read-only, against the local backend (`BREADSHEET_API_URL=http://host.docker.internal:5050`, Neon
+    `dev`). Config in `.ha-config/`; its login is in `.ha-config/dev-credentials.txt`.
+  - **`ha-release`** (`breadsheet-hass-release`, http://localhost:8124): Breadsheet installed from the Marketplace
+    like a new user's, paired with production. For fresh installs, upgrades, re-pairing, and the Android emulators.
+    Config in `.ha-config-release/`. It has no external URL, so breadsheet can't nudge it (it polls); webhook
+    nudges get tested on an internet-reachable HA.
+  - To upgrade HA, bump the image tag in `dev/compose.yaml`, then `docker compose -f dev/compose.yaml pull` and
+    `up -d`. Keep it at or above `hacs.json`'s `homeassistant`.
+- **Android emulators** (Android Studio's Device Manager on the developer's Mac; Docker can't run them on Apple
+  Silicon): `breadsheet-android16` and `breadsheet-android15`, on Google Play arm64 images so pushes arrive through
+  Firebase. Each has the companion app's `app-full-release.apk` (from `home-assistant/android` releases,
+  installed with `adb install -r`) signed in to `ha-release` at `http://10.0.2.2:8124`, the emulator's address
+  for the host. They only run while the Mac is awake. The test plan is in breadsheet-hass#7's comments.
 - `BREADSHEET_API_URL` is the only way to pair against a non-production backend. It's read when pairing and
   saved in the config entry.
 
