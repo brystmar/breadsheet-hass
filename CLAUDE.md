@@ -53,7 +53,7 @@ into this repo; if it needs changes, say so and stop.
   `breadsheet.complete_step`. Mode `queued` with a 1.5 s pause spaces same-minute steps. Users import it from its
   GitHub URL (the Marketplace zip holds only `custom_components/breadsheet`); the README link comes with #8.
   `tests/test_blueprint.py` runs it as a real automation.
-- breadsheet-hass#7: the blueprint's `live_activities` input (off by default) keeps one card per bake (tag
+- breadsheet-hass#7: the blueprint's `live_activities` input (on by default since 2026-11-10) keeps one card per bake (tag
   `breadsheet_<bake id>`, `live_update: true`) counting down to the next step. It moves on with the integration's
   `breadsheet_bake_changed` event (fired from `step_events.py` when a bake appears or its next step, time, or
   progress changes, including web check-offs), clears before waits over 4 hours, comes back with the
@@ -159,13 +159,13 @@ A running bake must survive a breadsheet outage of minutes to an hour.
 - Missing detail means unknown, never zero: a null `active_seconds` is not 0.
 
 ## Blueprint
-Inputs: notify targets, warn before each step (on), remind when late (on), Live Activities (off). It triggers on the integration's step events, so the lead time is the integration's
+Inputs: notify targets, warn before each step (off), remind when late (on), Live Activities (on). It triggers on the integration's step events, so the lead time is the integration's
 option, not a blueprint input.
-- A notification before and at each step, with a Done action calling
+- A notification at each step (and, if turned on, before it), with a Done action calling
   `breadsheet.complete_step`.
 - One late reminder at +5 minutes, then nothing.
 - Same-minute steps as separate notifications, 1 to 2 seconds apart.
-- Live Activities (opt-in) via the companion app's `live_update` payload: `tag` is the
+- Live Activities (on by default) via the companion app's `live_update` payload: `tag` is the
   bake id, one activity updated across consecutive steps, ended before waits over 4
   hours, no update for zero-wait steps. See the spec for every field.
 
