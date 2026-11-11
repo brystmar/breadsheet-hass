@@ -1,10 +1,7 @@
 blueprint:
-  name: Breadsheet bake notifications
+  name: Breadsheet Recipe Schedule Notifications
   description: >-
-    Phone notifications for your Fancy bakes on breadsheet.com: one before each step, one when it's due, and one
-    reminder 5 minutes late, then nothing. Every notification has a Done button that checks the step off.
-    How far ahead the first one comes is the Breadsheet integration's option (Settings > Devices & services >
-    Breadsheet > Configure), 2 minutes unless you change it.
+    Get a live activity for each step of your scheduled recipes from breadsheet.com, with optional notifications.
   domain: automation
   source_url: https://github.com/brystmar/breadsheet-hass/blob/main/blueprints/automation/breadsheet/bake_notifications.yaml
   author: brystmar
@@ -12,7 +9,7 @@ blueprint:
     min_version: "2026.11.0"
   input:
     notify_services:
-      name: Phones to notify
+      name: Phones to Notify
       description: >-
         The notify actions of the Home Assistant companion app on each phone, such as
         notify.mobile_app_my_phone (Developer tools > Actions lists them).
@@ -20,24 +17,23 @@ blueprint:
         text:
           multiple: true
     send_upcoming:
-      name: Warn before each step
+      name: Warn Before Each Step?
       description: A notification ahead of each step, at the integration's lead time.
-      default: true
+      default: false
       selector:
         boolean:
     send_late:
-      name: Remind when late
-      description: One more notification if a step still isn't done 5 minutes after it was due.
+      name: Remind When Late?
+      description: A notification if a step isn't done 5 minutes after it was due.
       default: true
       selector:
         boolean:
     live_activities:
-      name: Live Activities and Live Updates
+      name: Live Activities (iOS) and Live Updates (Android)
       description: >-
-        A lock-screen card for each bake, counting down to its next step (iOS 17.2+ Live Activities, Android 16+
-        Live Updates, Home Assistant 2026.7+). It ends during waits over 4 hours and comes back before the next
-        step, and clears when the bake ends.
-      default: false
+        Shows a live card on your lock screen for each active recipe, counting down to its next step. It ends during waits over 4 hours and comes back before the next
+        step, then clears when the bake ends.
+      default: true
       selector:
         boolean:
 
