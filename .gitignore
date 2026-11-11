@@ -222,3 +222,5 @@ __marimo__/
 # Local development
 .venv/
 .ha-config/
+.ha-config-release/
+dev/.env

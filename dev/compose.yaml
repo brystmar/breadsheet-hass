@@ -1,0 +1,42 @@
+# Test Home Assistants for developing breadsheet-hass (breadsheet-hass#21). Never the household HA.
+#
+#   docker compose -f dev/compose.yaml up -d          # start (or apply changes to) both
+#   docker compose -f dev/compose.yaml restart ha-dev # after changing custom_components/breadsheet
+#   docker compose -f dev/compose.yaml pull && docker compose -f dev/compose.yaml up -d   # after bumping the image
+#
+# Paths are relative to this file. Each HA's config, including its login and pairing, lives in a git-ignored
+# folder at the repo root, so removing or recreating a container loses nothing. TZ only affects log times (HA
+# uses the time zone set during onboarding); set it in a git-ignored dev/.env if you like.
+
+name: breadsheet-hass
+
+x-home-assistant: &home-assistant
+  image: ghcr.io/home-assistant/home-assistant:2026.11.1
+  restart: unless-stopped
+  environment: &environment
+    TZ: ${TZ:-UTC}
+
+services:
+  # This checkout's integration, against a local breadsheet backend (the Neon dev branch)
+  ha-dev:
+    <<: *home-assistant
+    container_name: breadsheet-hass-dev
+    ports:
+      - "8123:8123"
+    environment:
+      <<: *environment
+      # Read when pairing and saved in the config entry; the only way to pair with a non-production backend
+      BREADSHEET_API_URL: http://host.docker.internal:5050
+    volumes:
+      - ../.ha-config:/config
+      - ../custom_components/breadsheet:/config/custom_components/breadsheet:ro
+
+  # Breadsheet installed from the Marketplace, like a new user's, paired with production. The Android
+  # emulators' companion apps connect here (http://10.0.2.2:8124 from inside an emulator).
+  ha-release:
+    <<: *home-assistant
+    container_name: breadsheet-hass-release
+    ports:
+      - "8124:8123"
+    volumes:
+      - ../.ha-config-release:/config
