@@ -1,7 +1,7 @@
 blueprint:
   name: Breadsheet Recipe Schedule Notifications
   description: >-
-    Get a live activity for each step of your scheduled recipes from breadsheet.com, with optional notifications.
+    When you start a recipe schedule on breadsheet.com, this blueprint displays a live activity for each step on your phone's lock screen.
   domain: automation
   source_url: https://github.com/brystmar/breadsheet-hass/blob/main/blueprints/automation/breadsheet/bake_notifications.yaml
   author: brystmar
@@ -11,8 +11,8 @@ blueprint:
     notify_services:
       name: Phones to Notify
       description: >-
-        The notify actions of the Home Assistant companion app on each phone, such as
-        notify.mobile_app_my_phone (Developer tools > Actions lists them).
+        The notify action of the Home Assistant companion app on each phone. Find it under Settings > Tools > Actions. Example:
+        notify.mobile_app_my_phone
       selector:
         text:
           multiple: true
