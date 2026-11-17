@@ -58,8 +58,18 @@ into this repo; if it needs changes, say so and stop.
   `breadsheet_bake_changed` event (fired from `step_events.py` when a bake appears or its next step, time, or
   progress changes, including web check-offs), clears before waits over 4 hours, comes back with the
   `breadsheet_step_upcoming` before the next step, skips steps due within a minute, and clears on
-  `breadsheet_bake_ended`. Every update sends `silent` and `alert_once` (iOS ignores `silent` on a start). Not yet
-  checked on a real phone: see the Android test plan on breadsheet-hass#7.
+  `breadsheet_bake_ended`, along with every step notification (tags `breadsheet_<bake id>_<position>` for 1 to the
+  event's `steps_total`). Since v0.1.2 the progress bar shows the current step's wait, not steps done, and the
+  payload is platform-aware. iPhones are companion app devices made by Apple (`integration_entities('mobile_app')`
+  then `device_attr`; notify action `notify.mobile_app_<device name | slugify>`); anything else, including a notify
+  group, is Android. iPhones get no `progress` (the bar fills itself from the countdown, with
+  `progress_bar_direction: increasing`), and are only sent updates when a step starts, because every update
+  restarts the bar. Android gets `progress` = seconds since `wait_started_at` out of `progress_max` = the wait's
+  length (`-1`/`1` for the first step: no bar), refreshed by `breadsheet_bake_progress` (once a minute per active
+  bake with a next step, `PROGRESS_EVERY` in `step_events.py`). The warning only brings back a card that a wait over
+  4 hours cleared; ticks only refresh a card that's showing. `StepEvents` seeds its last-announced cards from
+  `coordinator.restored_bakes`, so a restart alone doesn't re-announce (and restart the iPhone bar). Checked on the
+  Android 16 emulator (2026-11-17) and an iPhone; the rest of the Android test plan is on breadsheet-hass#7.
 - breadsheet-hass#5: `panel.py` registers the "Breadsheet" sidebar panel (`/breadsheet`) while an account is
   loaded, serving `frontend/breadsheet-panel.js`. The script calls the websocket command `breadsheet/panel_url`,
   which gets `POST /api/v2/panel-tokens` from breadsheet and returns the website's `/panel` URL with a 12-hour
@@ -168,6 +178,15 @@ option, not a blueprint input.
 - Live Activities (on by default) via the companion app's `live_update` payload: `tag` is the
   bake id, one activity updated across consecutive steps, ended before waits over 4
   hours, no update for zero-wait steps. See the spec for every field.
+- The progress bar is the current step's wait, with a payload per platform: iPhones (companion app devices made by
+  Apple) fill it themselves and get updates only when a step starts; everything else is Android and gets the
+  elapsed seconds every minute from `breadsheet_bake_progress`. Users must list each phone's own notify action.
+- When a bake ends it clears the card and every step notification of the bake.
+- Events it uses: `breadsheet_step_upcoming`, `_due`, `_late`, `breadsheet_bake_changed`,
+  `breadsheet_bake_progress`, `breadsheet_bake_ended`. Step and bake events carry `wait_started_at` (when the wait
+  leading up to the step began: the previous non-skipped step's check-off, or its due time; none for the first step).
+- Its name is "Breadsheet step notifications for active recipes"; the file path stays
+  `blueprints/automation/breadsheet/bake_notifications.yaml`, since the README's import link uses it.
 
 ## AI Agents (M4)
 - Register a **Breadsheet** LLM API using HA's LLM API helpers, containing only

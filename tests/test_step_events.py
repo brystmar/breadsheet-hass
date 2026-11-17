@@ -93,7 +93,7 @@ async def test_events_carry_what_a_notification_needs(
     assert due[0].data == {
         "bake_id": BAKE_ID, "bake_name": "Weekend Loaf", "bake_path": "/bakes/abc123",
         "position": 2, "text": "Step 2", "note": "Wet hands", "scheduled_at": "2026-11-09T19:05:00+00:00",
-        "hands_on_seconds": 600, "next_position": 3, "next_text": "Step 3",
+        "wait_started_at": "2026-11-09T18:05:00+00:00", "hands_on_seconds": 600, "next_position": 3, "next_text": "Step 3",
         "next_scheduled_at": "2026-11-10T02:05:00+00:00", "steps_done": 1, "steps_total": 3,
     }
 
@@ -214,7 +214,7 @@ class TestBakeChanged:
         assert changed[0].data == {
             "bake_id": BAKE_ID, "bake_name": "Weekend Loaf", "bake_path": "/bakes/abc123",
             "next_position": 2, "next_text": "Step 2", "next_scheduled_at": "2026-11-09T19:05:00+00:00",
-            "steps_done": 1, "steps_total": 3}
+            "wait_started_at": "2026-11-09T18:05:00+00:00", "steps_done": 1, "steps_total": 3}
 
         await new_answer(hass, aioclient_mock, mock_config_entry, [under_way(completed_at="2026-11-09T18:58:00+00:00")])
         assert [(e.data["next_position"], e.data["steps_done"]) for e in changed] == [(2, 1), (3, 2)]
@@ -240,3 +240,65 @@ class TestBakeChanged:
         done["steps"][2]["completed_at"] = "2026-11-09T18:59:00+00:00"
         await new_answer(hass, aioclient_mock, mock_config_entry, [done])
         assert (changed[-1].data["next_position"], changed[-1].data["steps_done"]) == (None, 3)
+
+    async def test_a_restart_alone_announces_nothing(
+            self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,
+            hass_storage: dict) -> None:
+        """Each announcement restarts the iPhone's progress bar, so an unchanged bake isn't re-announced."""
+        from custom_components.breadsheet.const import EVENT_BAKE_CHANGED
+        from custom_components.breadsheet.coordinator import storage_key
+        key = storage_key(mock_config_entry.entry_id)
+        hass_storage[key] = {"version": 1, "key": key,
+                             "data": {"etag": '"v1"', "last_synced": "2026-11-09T18:20:00+00:00",
+                                      "bakes": [under_way()]}}
+        changed = async_capture_events(hass, EVENT_BAKE_CHANGED)
+        mock_bakes(aioclient_mock, [under_way()], interval=60, etag='"v2"')
+        await set_up(hass, mock_config_entry)
+        assert changed == []
+
+        # A real change after the restart is still announced
+        await new_answer(hass, aioclient_mock, mock_config_entry, [under_way(completed_at="2026-11-09T18:58:00+00:00")])
+        assert [e.data["next_position"] for e in changed] == [3]
+
+
+class TestWaitStartedAt:
+    """When the wait leading up to a step began: where its progress bar starts."""
+
+    async def test_the_first_step_has_none(
+            self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry) -> None:
+        from custom_components.breadsheet.const import EVENT_BAKE_CHANGED
+        changed = async_capture_events(hass, EVENT_BAKE_CHANGED)
+        bake = bake_json(projected_end="2026-11-10T02:05:00+00:00")
+        bake["steps"] = [step_json(1, "2026-11-09T19:00:00+00:00", 600), step_json(2, "2026-11-09T19:10:00+00:00", 0)]
+        mock_bakes(aioclient_mock, [bake], interval=60)
+        await set_up(hass, mock_config_entry)
+        assert (changed[0].data["next_position"], changed[0].data["wait_started_at"]) == (1, None)
+
+    async def test_skipped_steps_are_passed_over_and_unchecked_ones_count_from_their_due_time(
+            self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,
+            frozen: FrozenDateTimeFactory) -> None:
+        upcoming = async_capture_events(hass, EVENT_STEP_UPCOMING)
+        bake = bake_json(projected_end="2026-11-10T02:05:00+00:00")
+        bake["steps"] = [step_json(1, "2026-11-09T18:50:00+00:00", 900),
+                         step_json(2, None, 3600, skipped=True),
+                         step_json(3, "2026-11-09T19:05:00+00:00", 0)]
+        mock_bakes(aioclient_mock, [bake], interval=60)
+        await set_up(hass, mock_config_entry)
+        await until(hass, frozen, "19:04")
+        # Step 1 isn't checked off, so step 3's wait counts from step 1's due time; skipped step 2 doesn't count
+        assert [(e.data["position"], e.data["wait_started_at"]) for e in upcoming] == [
+            (3, "2026-11-09T18:50:00+00:00")]
+
+
+async def test_progress_fires_every_minute_for_active_bakes(
+        hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,
+        frozen: FrozenDateTimeFactory) -> None:
+    from custom_components.breadsheet.const import EVENT_BAKE_PROGRESS
+    from custom_components.breadsheet.step_events import bake_changed_data
+    from custom_components.breadsheet.models import Bake
+    progress = async_capture_events(hass, EVENT_BAKE_PROGRESS)
+    mock_bakes(aioclient_mock, [under_way()], interval=60)
+    await set_up(hass, mock_config_entry)
+    await until(hass, frozen, "18:55")  # the clock starts at 18:50
+    assert 4 <= len(progress) <= 6
+    assert progress[-1].data == bake_changed_data(Bake.from_api(under_way()))

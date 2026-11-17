@@ -24,6 +24,18 @@ def step_after(bake: Bake, step: BakeStep) -> BakeStep | None:
     return next((later for later in bake.steps if later.position > step.position and not later.skipped), None)
 
 
+def wait_started_at(bake: Bake, step: BakeStep) -> datetime | None:
+    """
+    When the wait leading up to `step` began: the previous step that isn't skipped, at its check-off (or its due
+    time, if it isn't checked off). That's where the projection counts from, so the wait runs from here to
+    `step.scheduled_at`. None for the first step, which no wait leads up to.
+    """
+    before = [earlier for earlier in bake.steps if earlier.position < step.position and not earlier.skipped]
+    if not before:
+        return None
+    return before[-1].completed_at or before[-1].scheduled_at
+
+
 def progress(bake: Bake) -> tuple[int, int]:
     """(steps checked off, steps in the bake), leaving out skipped steps."""
     steps = [step for step in bake.steps if not step.skipped]

@@ -68,6 +68,8 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
         self._etag: str | None = None
         # What was saved before this run, until the first successful poll replaces it
         self._saved: BreadsheetState | None = None
+        # The bakes saved before this run, kept for good: step events treat them as already announced
+        self.restored_bakes: dict[str, Bake] = {}
         # Whether the last poll reached breadsheet. Not last_update_success, which is also True while running
         # from saved bakes after a restart during an outage.
         self._synced = False
@@ -86,6 +88,7 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
         try:
             self._saved = BreadsheetState(bakes=parse_bakes(saved["bakes"]),
                                           last_synced=dt_util.parse_datetime(saved.get("last_synced") or ""))
+            self.restored_bakes = self._saved.bakes
             self._etag = saved.get("etag")
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Ignoring unreadable saved bakes: %s", err)
@@ -174,10 +177,14 @@ class BreadsheetCoordinator(DataUpdateCoordinator[BreadsheetState]):
         self.update_interval = timedelta(seconds=min(max(seconds, MIN_INTERVAL), MAX_INTERVAL))
 
     def _fire_ended(self, before: dict[str, Bake], after: dict[str, Bake]) -> None:
-        """A bake left the active Fancy list. The list doesn't say why, so there's no `outcome` to send."""
+        """
+        A bake left the active Fancy list. The list doesn't say why, so there's no `outcome` to send.
+        `steps_total` (every step, skipped ones too) lets the blueprint clear each step's notification.
+        """
         for bake_id in before.keys() - after.keys():
             _LOGGER.debug("Bake %s ended", bake_id)
-            self.hass.bus.async_fire(EVENT_BAKE_ENDED, {"bake_id": bake_id})
+            self.hass.bus.async_fire(EVENT_BAKE_ENDED, {"bake_id": bake_id,
+                                                        "steps_total": len(before[bake_id].steps)})
 
 
 def storage_key(entry_id: str) -> str:

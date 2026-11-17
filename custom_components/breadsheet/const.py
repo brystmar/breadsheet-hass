@@ -16,7 +16,7 @@ ENV_API_URL: Final = "BREADSHEET_API_URL"
 PROFILE_URL: Final = "https://www.breadsheet.com/profile"
 
 # Fired when a bake leaves the active Fancy list (completed, canceled, expired, or switched to Simple), with
-# `bake_id`. The blueprint clears that bake's Live Activity on it.
+# `bake_id` and `steps_total`. The blueprint clears that bake's Live Activity and step notifications on it.
 EVENT_BAKE_ENDED: Final = "breadsheet_bake_ended"
 
 # Step events, timed by the integration from the current schedule (spec: HA integration, Entities). Calendar
@@ -27,6 +27,10 @@ EVENT_STEP_LATE: Final = "breadsheet_step_late"
 # Fired when a bake first appears, or its next step, that step's time, or its progress changes (a check-off, a
 # skip, a new wait): what a Live Activity shows. Not fired for ended bakes; breadsheet_bake_ended covers those.
 EVENT_BAKE_CHANGED: Final = "breadsheet_bake_changed"
+# Fired once a minute for each active bake, with the same data as breadsheet_bake_changed. Android's Live Update
+# progress bar only moves when the card is sent again, so the blueprint refreshes it with this (iOS fills its bar
+# from the countdown on its own, and restarts it on every update, so the blueprint doesn't send iOS these).
+EVENT_BAKE_PROGRESS: Final = "breadsheet_bake_progress"
 
 # Options
 CONF_LEAD_MINUTES: Final = "lead_minutes"
