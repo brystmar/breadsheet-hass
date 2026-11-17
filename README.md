@@ -12,7 +12,7 @@ more if you're running late. Tap **Done** on the notification to check the step 
 ## What you get
 
 - **Live Activities (iOS) and Live Updates (Android)**, on by default: one card per bake showing the next step, a
-  countdown to it, and progress.
+  countdown to it, and a progress bar for the wait leading up to it.
 - **Notifications** when each step is due, and one reminder 5 minutes late, then nothing. A warning before each
   step (2 minutes ahead by default) is optional. Steps due in the same minute arrive separately, in order.
 - **A Done button** that checks the step off on breadsheet. It works through breadsheet outages: the check-off
@@ -22,7 +22,9 @@ more if you're running late. Tap **Done** on the notification to check the step 
 - **Entities:** a calendar of your bake steps, and per bake a device with current step, next step, next step
   time, and progress sensors.
 - **Events** for your own automations: `breadsheet_step_upcoming`, `breadsheet_step_due`,
-  `breadsheet_step_late`, `breadsheet_bake_changed`, and `breadsheet_bake_ended`.
+  `breadsheet_step_late`, `breadsheet_bake_changed`, `breadsheet_bake_progress` (once a minute for each bake with a
+  step still to come), and `breadsheet_bake_ended`. Step and bake events carry `wait_started_at`, when the wait
+  leading up to the step began (empty for a bake's first step).
 
 Only bakes started with **Fancy** alerts reach Home Assistant. Simple bakes (calendar file export) never do.
 
@@ -62,8 +64,9 @@ Import the blueprint, then create an automation from it:
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbrystmar%2Fbreadsheet-hass%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fbreadsheet%2Fbake_notifications.yaml)
 
-- **Phones to Notify:** each phone's companion-app notify action, such as `notify.mobile_app_my_phone`
-  (**Settings → Tools → Actions** lists them).
+- **Phones to Notify:** each phone's own companion-app notify action, such as `notify.mobile_app_my_phone`
+  (**Settings → Tools → Actions** lists them). List every phone separately rather than a notify group: the
+  lock-screen card is different on iPhones and Android phones, and a group gets the Android one.
 - **Warn Before Each Step?:** off by default.
 - **Remind When Late?:** on by default.
 - **Live Activities (iOS) and Live Updates (Android):** on by default; see below.
@@ -78,8 +81,18 @@ displays it.
 
 The blueprint's **Live Activities (iOS) and Live Updates (Android)** input is on by default; turn it off if you only
 want notifications. Each bake gets one lock-screen card with the next
-step, a countdown, and progress. The card goes away during waits longer than 4 hours (Apple limits a Live
-Activity to 8 hours) and comes back just before the next step. It clears when the bake ends.
+step, a countdown to it, and a progress bar that fills over the wait leading up to it. The card goes away during
+waits longer than 4 hours (Apple limits a Live Activity to 8 hours) and comes back just before the next step.
+When the bake ends, the card and the bake's step notifications are cleared.
+
+- **iPhone:** the bar fills on its own from the countdown. The card is updated only when a step starts or its
+  time changes, since each update starts the bar over. After a wait longer than 4 hours, the bar covers only the
+  last few minutes before the next step.
+- **Android:** Home Assistant updates the bar once a minute. A bake's first step has no bar, since no wait leads
+  up to it.
+
+The blueprint tells phones apart by their companion app device in Home Assistant: a device made by Apple is an
+iPhone, and anything else is treated as Android.
 
 Requirements, from the [companion app docs](https://companion.home-assistant.io/docs/notifications/live-activities):
 
@@ -88,8 +101,8 @@ Requirements, from the [companion app docs](https://companion.home-assistant.io/
 - **Android:** Android 16 or later, Home Assistant 2026.7 or later. On Samsung phones, turn on **Live
   notifications for all apps** in developer options to get the status bar chip.
 
-**Android testers wanted.** Live Updates haven't been checked on real Android phones yet, including what Android
-15 and older show. If you try it, please [open an issue](https://github.com/brystmar/breadsheet-hass/issues)
+**Android testers wanted.** Live Updates have been checked on an Android 16 emulator but not yet on real Android
+phones, and what Android 15 and older show is still unknown. If you try it, please [open an issue](https://github.com/brystmar/breadsheet-hass/issues)
 with your phone, Android version, and what you saw.
 
 ## Sidebar panel

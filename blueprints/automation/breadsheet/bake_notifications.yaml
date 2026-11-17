@@ -1,5 +1,5 @@
 blueprint:
-  name: Breadsheet Recipe Schedule Notifications
+  name: Breadsheet step notifications for active recipes
   description: >-
     When you start a recipe schedule on breadsheet.com, this blueprint displays a live activity for each step on your phone's lock screen.
   domain: automation
@@ -62,6 +62,10 @@ triggers:
   - trigger: event
     event_type: breadsheet_bake_ended
     id: ended
+  # Once a minute per active bake: moves Android's progress bar, which only changes when the card is sent again
+  - trigger: event
+    event_type: breadsheet_bake_progress
+    id: tick
 
 variables:
   notify_services: !input notify_services
@@ -78,7 +82,7 @@ conditions:
       {{ (trigger.id == 'upcoming' and (send_upcoming or live_activities))
          or trigger.id == 'due'
          or (trigger.id == 'late' and send_late)
-         or (trigger.id in ['changed', 'ended'] and live_activities)
+         or (trigger.id in ['changed', 'ended', 'tick'] and live_activities)
          or (trigger.id == 'done' and done_parts | length == 3 and done_parts[0] == 'BREADSHEET_DONE') }}
 
 actions:
@@ -93,21 +97,33 @@ actions:
           position: "{{ done_parts[2] | int }}"
       - stop: Checked off
 
-  # A bake ended (finished, canceled, expired, or switched to Simple): its card must go. Android has no expiry
+  # A bake ended (finished, canceled, expired, or switched to Simple): its card must go (Android has no expiry),
+  # and so must its step notifications, whose Done buttons would otherwise outlive the bake
   - if:
       - condition: trigger
         id: ended
     then:
+      - variables:
+          tags: >-
+            {{ ['breadsheet_' ~ trigger.event.data.bake_id]
+               + range(1, (trigger.event.data.steps_total | default(0) | int) + 1)
+                 | map('string') | map('regex_replace', '^', 'breadsheet_' ~ trigger.event.data.bake_id ~ '_')
+                 | list }}
       - repeat:
           for_each: "{{ notify_services }}"
           sequence:
-            - action: "{{ repeat.item }}"
-              continue_on_error: true
-              data:
-                message: clear_notification
-                data:
-                  tag: "breadsheet_{{ trigger.event.data.bake_id }}"
-      - stop: Card cleared
+            - variables:
+                phone: "{{ repeat.item }}"
+            - repeat:
+                for_each: "{{ tags }}"
+                sequence:
+                  - action: "{{ phone }}"
+                    continue_on_error: true
+                    data:
+                      message: clear_notification
+                      data:
+                        tag: "{{ repeat.item }}"
+      - stop: Cleared
 
   # Step notifications
   - if:
@@ -144,31 +160,59 @@ actions:
       - delay:
           milliseconds: 1500
 
-  # The Live Activity / Live Update: one card per bake (tag breadsheet_<bake id>), counting down to the next step.
-  # Moved on by breadsheet_bake_changed (a check-off, a skip, a new bake), and brought back by the warning before
-  # a step that follows a long wait.
+  # The Live Activity / Live Update: one card per bake (tag breadsheet_<bake id>), counting down to the next step,
+  # with a progress bar for the step whose wait is running. Sent when a step starts or the next step's time changes
+  # (breadsheet_bake_changed), brought back by the warning before a step that follows a wait over 4 hours, and on
+  # Android refreshed every minute (breadsheet_bake_progress).
+  #
+  # iPhones and Android phones get different fields. iOS fills the bar on its own from the countdown, but restarts
+  # it from empty on every update, so iPhones only get updates at the start of a step. Android's bar shows whatever
+  # was last sent, so Android phones get the seconds elapsed, every minute. A phone is an iPhone when its companion
+  # app device in Home Assistant is made by Apple; anything else (or a notify action that isn't one phone's) is
+  # treated as Android.
   - if:
       - condition: template
-        value_template: "{{ live_activities and trigger.id in ['changed', 'upcoming'] }}"
+        value_template: "{{ live_activities and trigger.id in ['changed', 'upcoming', 'tick'] }}"
     then:
       - variables:
           event: "{{ trigger.event.data }}"
           card:
             bake_id: "{{ event.bake_id }}"
             name: "{{ event.bake_name }}"
-            position: "{{ event.next_position if trigger.id == 'changed' else event.position }}"
-            text: "{{ event.next_text if trigger.id == 'changed' else event.text }}"
-            at: "{{ event.next_scheduled_at if trigger.id == 'changed' else event.scheduled_at }}"
-            done: "{{ event.steps_done }}"
+            position: "{{ event.position if trigger.id == 'upcoming' else event.next_position }}"
+            text: "{{ event.text if trigger.id == 'upcoming' else event.next_text }}"
+            at: "{{ event.scheduled_at if trigger.id == 'upcoming' else event.next_scheduled_at }}"
+            started: "{{ event.wait_started_at | default(none) }}"
             total: "{{ event.steps_total }}"
           seconds_left: "{{ (as_timestamp(card.at) - as_timestamp(now())) | int if card.at else none }}"
+          # How long the step's wait is, and how far into it we are; none for the first step, which no wait leads to
+          length: "{{ (as_timestamp(card.at) - as_timestamp(card.started)) | int if card.at and card.started else none }}"
+          elapsed: >-
+            {{ [[(as_timestamp(now()) - as_timestamp(card.started)) | int, 0] | max, length] | min
+               if length is not none else none }}
+          long_wait: "{{ length is none or length > 4 * 3600 }}"
           # Clear before waits over 4 hours (Apple ends activities after 8, and starts are budgeted) and when
-          # nothing is left; leave alone a step due within a minute (zero-wait steps get no update)
+          # nothing is left; leave alone a step due within a minute (zero-wait steps get no update). The warning
+          # before a step only brings back a card that a long wait cleared, and the minute ticks only refresh a
+          # card that's showing.
           verdict: >-
-            {% if card.position is none or card.at is none %}clear
-            {% elif seconds_left > 4 * 3600 %}clear
+            {% if card.position is none or card.at is none %}{{ 'clear' if trigger.id == 'changed' else 'skip' }}
+            {% elif seconds_left > 4 * 3600 %}{{ 'clear' if trigger.id == 'changed' else 'skip' }}
             {% elif seconds_left < 60 %}skip
+            {% elif trigger.id == 'upcoming' and not long_wait %}skip
+            {% elif trigger.id == 'tick' and long_wait %}skip
             {% else %}show{% endif %}
+          # The notify actions of iPhones: companion app devices made by Apple
+          iphones: >-
+            {% set ns = namespace(found=[]) %}
+            {% for device in integration_entities('mobile_app') | map('device_id') | reject('none') | unique %}
+              {% if device_attr(device, 'manufacturer') == 'Apple' %}
+                {% set ns.found = ns.found + ['notify.mobile_app_' ~ (device_attr(device, 'name') | slugify)] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.found }}
+          label: >-
+            {{ (card.text.split() | first | default('Step'))[:12] if card.text else 'Step' }} {{ card.position }}/{{ card.total }}
       - choose:
           - conditions:
               - condition: template
@@ -177,31 +221,58 @@ actions:
               - repeat:
                   for_each: "{{ notify_services }}"
                   sequence:
-                    - action: "{{ repeat.item }}"
-                      continue_on_error: true
-                      data:
-                        # Android needs the title on every update, or it posts a plain banner instead
-                        title: "{{ card.name }}"
-                        message: "{{ card.text }}"
-                        data:
-                          tag: "breadsheet_{{ card.bake_id }}"
-                          live_update: true
-                          critical_text: >-
-                            {{ (card.text.split() | first | default('Step'))[:12] }} {{ card.position }}/{{ card.total }}
-                          chronometer: true
-                          when: "{{ as_timestamp(card.at) | int }}"
-                          when_relative: false
-                          progress: "{{ card.done | int }}"
-                          progress_max: "{{ card.total | int }}"
-                          notification_icon: mdi:bread-slice
-                          notification_icon_color: "#B5762E"
-                          color: "#B5762E"
-                          # Quiet updates: the step notifications already alert. iOS ignores silent on the
-                          # first update (the start), and Android's alert_once lets that first one sound
-                          silent: true
-                          alert_once: true
-                          url: "/breadsheet/{{ card.bake_id }}"
-                          clickAction: "/breadsheet/{{ card.bake_id }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ repeat.item in iphones }}"
+                      then:
+                        # iOS: no progress value, so the bar fills on its own over the countdown. Not on ticks,
+                        # which would restart it
+                        - if:
+                            - condition: template
+                              value_template: "{{ trigger.id != 'tick' }}"
+                          then:
+                            - action: "{{ repeat.item }}"
+                              continue_on_error: true
+                              data:
+                                title: "{{ card.name }}"
+                                message: "{{ card.text }}"
+                                data:
+                                  tag: "breadsheet_{{ card.bake_id }}"
+                                  live_update: true
+                                  critical_text: "{{ label }}"
+                                  chronometer: true
+                                  when: "{{ as_timestamp(card.at) | int }}"
+                                  when_relative: false
+                                  progress_bar_direction: increasing
+                                  notification_icon: mdi:bread-slice
+                                  notification_icon_color: "#B5762E"
+                                  # Quiet updates: the step notifications already alert. iOS ignores silent on the
+                                  # first update (the start)
+                                  silent: true
+                                  url: "/breadsheet/{{ card.bake_id }}"
+                      else:
+                        # Android: the seconds into the step's wait, out of its length (-1: no bar for the first
+                        # step, which no wait leads to)
+                        - action: "{{ repeat.item }}"
+                          continue_on_error: true
+                          data:
+                            # Android needs the title on every update, or it posts a plain banner instead
+                            title: "{{ card.name }}"
+                            message: "{{ card.text }}"
+                            data:
+                              tag: "breadsheet_{{ card.bake_id }}"
+                              live_update: true
+                              critical_text: "{{ label }}"
+                              chronometer: true
+                              when: "{{ as_timestamp(card.at) | int }}"
+                              when_relative: false
+                              progress: "{{ elapsed if elapsed is not none else -1 }}"
+                              progress_max: "{{ length if length is not none else 1 }}"
+                              notification_icon: mdi:bread-slice
+                              color: "#B5762E"
+                              # Quiet updates: Android's alert_once lets only the first one sound
+                              alert_once: true
+                              clickAction: "/breadsheet/{{ card.bake_id }}"
           - conditions:
               - condition: template
                 value_template: "{{ verdict | trim == 'clear' }}"

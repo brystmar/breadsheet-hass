@@ -9,19 +9,23 @@ import pytest
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.entity import entity_sources
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 
-from pytest_homeassistant_custom_component.common import async_mock_service
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 BLUEPRINT = Path(__file__).parent.parent / "blueprints/automation/breadsheet/bake_notifications.yaml"
 BAKE_ID = "0196f2a0-0000-7000-8000-0000000b0001"
 
 
-def step_event(position: int = 2, text: str = "Mix", scheduled_at: str = "2026-11-09T19:05:00+00:00") -> dict:
+def step_event(position: int = 2, text: str = "Mix", scheduled_at: str = "2026-11-09T19:05:00+00:00",
+               wait_started_at: str | None = "2026-11-09T18:05:00+00:00") -> dict:
     """What the integration's step events carry (step_events.step_event_data)."""
     return {"bake_id": BAKE_ID, "bake_name": "Weekend Loaf", "bake_path": "/bakes/abc123", "position": position,
-            "text": text, "note": None, "scheduled_at": scheduled_at, "hands_on_seconds": 600,
+            "text": text, "note": None, "scheduled_at": scheduled_at, "wait_started_at": wait_started_at,
+            "hands_on_seconds": 600,
             "next_position": position + 1, "next_text": "Bake", "next_scheduled_at": None,
             "steps_done": position - 1, "steps_total": 3}
 
@@ -29,6 +33,26 @@ def step_event(position: int = 2, text: str = "Mix", scheduled_at: str = "2026-1
 @pytest.fixture
 async def notified(hass: HomeAssistant) -> list[ServiceCall]:
     return async_mock_service(hass, "notify", "mobile_app_phone")
+
+
+def register_phone(hass: HomeAssistant, name: str, manufacturer: str) -> None:
+    """A companion app device, the way the mobile_app integration registers one (with one of its sensors)."""
+    entry = MockConfigEntry(domain="mobile_app", title=name)
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, identifiers={("mobile_app", name)},
+                                                    name=name, manufacturer=manufacturer)
+    sensor = er.async_get(hass).async_get_or_create("sensor", "mobile_app", f"{name}_battery", config_entry=entry,
+                                                    device_id=device.id)
+    # As if the sensor were loaded: integration_entities() lists only loaded entities (entity_sources) when no
+    # config entry is titled after the integration, which is how the blueprint finds companion app devices
+    entity_sources(hass)[sensor.entity_id] = {"domain": "mobile_app", "config_entry": entry.entry_id}
+
+
+@pytest.fixture
+async def iphone(hass: HomeAssistant) -> list[ServiceCall]:
+    """An iPhone, notify.mobile_app_sam_s_iphone."""
+    register_phone(hass, "Sam's iPhone", "Apple")
+    return async_mock_service(hass, "notify", "mobile_app_sam_s_iphone")
 
 
 @pytest.fixture
@@ -140,11 +164,13 @@ def in_minutes(minutes: float) -> str:
     return (dt_util.utcnow() + timedelta(minutes=minutes)).isoformat()
 
 
-def changed(next_position: int | None = 2, text: str | None = "Mix", at: str | None = None, done: int = 1) -> dict:
-    """What breadsheet_bake_changed carries (step_events.bake_changed_data)."""
+def changed(next_position: int | None = 2, text: str | None = "Mix", at: str | None = None, done: int = 1,
+            started: str | None = "10 minutes ago") -> dict:
+    """What breadsheet_bake_changed (and breadsheet_bake_progress) carry (step_events.bake_changed_data)."""
     return {"bake_id": BAKE_ID, "bake_name": "Weekend Loaf", "bake_path": "/bakes/abc123",
             "next_position": next_position, "next_text": text,
             "next_scheduled_at": at if at is not None or next_position is None else in_minutes(30),
+            "wait_started_at": in_minutes(-10) if started == "10 minutes ago" else started,
             "steps_done": done, "steps_total": 3}
 
 
@@ -163,22 +189,59 @@ class TestLiveActivities:
     async def test_turned_off_sends_nothing(self, hass: HomeAssistant, notified: list) -> None:
         await use_blueprint(hass, live_activities=False)
         await fire(hass, "breadsheet_bake_changed", changed())
-        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID})
+        await fire(hass, "breadsheet_bake_progress", changed())
+        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID, "steps_total": 3})
         assert notified == []
 
-    async def test_a_card_counts_down_to_the_next_step(self, hass: HomeAssistant, notified: list) -> None:
-        await use_blueprint(hass, live_activities=True)
+    async def test_android_counts_down_with_the_step_s_progress(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass)
         at = in_minutes(30)
-        await fire(hass, "breadsheet_bake_changed", changed(at=at))
+        await fire(hass, "breadsheet_bake_changed", changed(at=at))  # the wait started 10 minutes ago
         (card,) = cards(notified)
         assert (card["title"], card["message"]) == ("Weekend Loaf", "Mix")
         data = card["data"]
         assert data["tag"] == f"breadsheet_{BAKE_ID}"
         assert (data["chronometer"], data["when"], data["when_relative"]) == (
             True, int(dt_util.parse_datetime(at).timestamp()), False)
-        assert (data["progress"], data["progress_max"], data["critical_text"]) == (1, 3, "Mix 2/3")
-        assert (data["silent"], data["alert_once"]) == (True, True)
-        assert data["url"] == data["clickAction"] == f"/breadsheet/{BAKE_ID}"
+        assert abs(data["progress"] - 600) <= 2 and abs(data["progress_max"] - 2400) <= 2
+        assert data["critical_text"] == "Mix 2/3"
+        assert (data["alert_once"], data["clickAction"]) == (True, f"/breadsheet/{BAKE_ID}")
+        assert "progress_bar_direction" not in data
+
+    async def test_android_is_refreshed_every_minute(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass)
+        await fire(hass, "breadsheet_bake_progress", changed(started=in_minutes(-20)))
+        (card,) = cards(notified)
+        assert abs(card["data"]["progress"] - 1200) <= 2
+
+    async def test_the_first_step_has_no_bar_on_android(self, hass: HomeAssistant, notified: list) -> None:
+        await use_blueprint(hass)
+        await fire(hass, "breadsheet_bake_changed", changed(next_position=1, done=0, started=None))
+        assert (cards(notified)[0]["data"]["progress"], cards(notified)[0]["data"]["progress_max"]) == (-1, 1)
+        await fire(hass, "breadsheet_bake_progress", changed(next_position=1, done=0, started=None))
+        assert len(cards(notified)) == 1  # nothing to refresh
+
+    async def test_an_iphone_fills_the_bar_itself_and_gets_no_minute_updates(self, hass: HomeAssistant,
+                                                                              iphone: list, notified: list) -> None:
+        await use_blueprint(hass, notify_services=["notify.mobile_app_sam_s_iphone", "notify.mobile_app_phone"])
+        await fire(hass, "breadsheet_bake_changed", changed())
+        (card,) = cards(iphone)
+        data = card["data"]
+        assert "progress" not in data and "progress_max" not in data
+        assert (data["progress_bar_direction"], data["silent"], data["url"]) == (
+            "increasing", True, f"/breadsheet/{BAKE_ID}")
+        assert data["critical_text"] == "Mix 2/3" and data["chronometer"] is True
+
+        await fire(hass, "breadsheet_bake_progress", changed())
+        assert len(cards(iphone)) == 1  # a minute update would restart the iPhone's bar
+        assert len(cards(notified)) == 2  # the Android phone gets both
+
+    async def test_android_devices_are_android(self, hass: HomeAssistant) -> None:
+        register_phone(hass, "Pixel", "Google")
+        pixel = async_mock_service(hass, "notify", "mobile_app_pixel")
+        await use_blueprint(hass, notify_services=["notify.mobile_app_pixel"])
+        await fire(hass, "breadsheet_bake_changed", changed())
+        assert "progress" in cards(pixel)[0]["data"]
 
     async def test_the_label_is_short(self, hass: HomeAssistant, notified: list) -> None:
         await use_blueprint(hass, live_activities=True)
@@ -190,12 +253,27 @@ class TestLiveActivities:
         await fire(hass, "breadsheet_bake_changed", changed(at=in_minutes(5 * 60)))
         assert cards(notified) == [{"message": "clear_notification", "data": {"tag": f"breadsheet_{BAKE_ID}"}}]
 
+    async def test_minute_updates_neither_bring_back_nor_clear_a_long_wait_s_card(self, hass: HomeAssistant,
+                                                                                  notified: list) -> None:
+        await use_blueprint(hass)
+        await fire(hass, "breadsheet_bake_progress", changed(at=in_minutes(5 * 60)))
+        await fire(hass, "breadsheet_bake_progress", changed(at=in_minutes(60), started=in_minutes(-5 * 60)))
+        assert notified == []
+
     async def test_and_comes_back_with_the_warning_before_the_next_step(self, hass: HomeAssistant,
                                                                          notified: list) -> None:
         await use_blueprint(hass, live_activities=True, send_upcoming=False)
-        await fire(hass, "breadsheet_step_upcoming", step_event(position=3, text="Bake", scheduled_at=in_minutes(2)))
+        await fire(hass, "breadsheet_step_upcoming", step_event(position=3, text="Bake", scheduled_at=in_minutes(2),
+                                                                wait_started_at=in_minutes(-6 * 60)))
         assert [card["message"] for card in cards(notified)] == ["Bake"]
         assert len(notified) == 1  # the card only: the warning itself is turned off
+
+    async def test_the_warning_leaves_a_showing_card_alone(self, hass: HomeAssistant, iphone: list) -> None:
+        """Sending it again would restart the iPhone's bar just before the step ends."""
+        await use_blueprint(hass, notify_services=["notify.mobile_app_sam_s_iphone"])
+        await fire(hass, "breadsheet_step_upcoming", step_event(scheduled_at=in_minutes(2),
+                                                                wait_started_at=in_minutes(-30)))
+        assert cards(iphone) == []
 
     async def test_steps_due_now_get_no_update(self, hass: HomeAssistant, notified: list) -> None:
         await use_blueprint(hass, live_activities=True)
@@ -207,14 +285,23 @@ class TestLiveActivities:
         await fire(hass, "breadsheet_bake_changed", changed(next_position=None, text=None, done=3))
         assert [card["message"] for card in cards(notified)] == ["clear_notification"]
 
-    async def test_an_ended_bake_is_cleared(self, hass: HomeAssistant, notified: list) -> None:
+    async def test_an_ended_bake_clears_its_card_and_step_notifications(self, hass: HomeAssistant,
+                                                                         notified: list) -> None:
         await use_blueprint(hass, live_activities=True)
-        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID, "outcome": "canceled"})
+        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID, "steps_total": 3, "outcome": "canceled"})
+        assert [card["data"]["tag"] for card in cards(notified)] == [
+            f"breadsheet_{BAKE_ID}", f"breadsheet_{BAKE_ID}_1", f"breadsheet_{BAKE_ID}_2", f"breadsheet_{BAKE_ID}_3"]
+
+    async def test_an_ended_bake_without_a_step_count_still_clears_its_card(self, hass: HomeAssistant,
+                                                                            notified: list) -> None:
+        await use_blueprint(hass, live_activities=True)
+        await fire(hass, "breadsheet_bake_ended", {"bake_id": BAKE_ID})
         assert cards(notified) == [{"message": "clear_notification", "data": {"tag": f"breadsheet_{BAKE_ID}"}}]
 
     async def test_the_warning_and_the_card_both_go_out(self, hass: HomeAssistant, notified: list) -> None:
         await use_blueprint(hass, send_upcoming=True, live_activities=True)
-        await fire(hass, "breadsheet_step_upcoming", step_event(scheduled_at=in_minutes(2)))
+        await fire(hass, "breadsheet_step_upcoming", step_event(scheduled_at=in_minutes(2),
+                                                                wait_started_at=in_minutes(-6 * 60)))
         assert len(notified) == 2
         assert notified[0].data["message"].startswith("At ")
         assert notified[1].data["data"]["live_update"] is True

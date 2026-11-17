@@ -7,6 +7,10 @@ window, would be missed or fire at the old time.
 Every time the coordinator's data changes (a poll, a webhook nudge, a local re-projection), all timers are
 reset from the new schedule. Each event fires at most once per step and scheduled time; if the schedule moves
 a step, its events fire again at the new time. A step that's done by the time its event comes due doesn't fire.
+
+Also breadsheet_bake_changed when a bake's card should change, and breadsheet_bake_progress once a minute per
+active bake (for Android's progress bar). After a restart, the bakes saved by the last run count as already
+announced, so an unchanged bake doesn't restart the iPhone's progress bar.
 """
 
 from __future__ import annotations
@@ -17,19 +21,21 @@ import logging
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_point_in_utc_time
+from homeassistant.helpers.event import async_track_point_in_utc_time, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .const import EVENT_BAKE_CHANGED, EVENT_STEP_DUE, EVENT_STEP_LATE, EVENT_STEP_UPCOMING
+from .const import EVENT_BAKE_CHANGED, EVENT_BAKE_PROGRESS, EVENT_STEP_DUE, EVENT_STEP_LATE, EVENT_STEP_UPCOMING
 from .coordinator import BreadsheetCoordinator
 from .models import Bake, BakeStep
-from .steps import next_step, progress, step_after
+from .steps import next_step, progress, step_after, wait_started_at
 
 _LOGGER = logging.getLogger(__name__)
 
 LATE_AFTER = timedelta(minutes=5)
 # An event that came due this recently, e.g. during a restart or between two resets, still fires; older ones don't
 CATCH_UP = timedelta(seconds=60)
+# How often breadsheet_bake_progress fires
+PROGRESS_EVERY = timedelta(minutes=1)
 
 type EventKey = tuple[str, int, str, str]  # bake id, step position, event type, scheduled time
 
@@ -45,9 +51,14 @@ def bake_changed_data(bake: Bake) -> dict[str, Any]:
         "next_position": upcoming.position if upcoming else None,
         "next_text": upcoming.text if upcoming else None,
         "next_scheduled_at": upcoming.scheduled_at.isoformat() if upcoming and upcoming.scheduled_at else None,
+        "wait_started_at": _iso(wait_started_at(bake, upcoming)) if upcoming else None,
         "steps_done": done,
         "steps_total": total,
     }
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return moment.isoformat() if moment else None
 
 
 def step_event_data(bake: Bake, step: BakeStep) -> dict[str, Any]:
@@ -62,6 +73,7 @@ def step_event_data(bake: Bake, step: BakeStep) -> dict[str, Any]:
         "text": step.text,
         "note": step.note,
         "scheduled_at": step.scheduled_at.isoformat() if step.scheduled_at else None,
+        "wait_started_at": _iso(wait_started_at(bake, step)),
         "hands_on_seconds": step.hands_on_seconds,
         "next_position": after.position if after else None,
         "next_text": after.text if after else None,
@@ -80,16 +92,21 @@ class StepEvents:
         self._lead = lead
         self._timers: list[CALLBACK_TYPE] = []
         self._fired: set[EventKey] = set()
-        self._cards: dict[str, dict[str, Any]] = {}  # the last breadsheet_bake_changed data, by bake
+        # The last breadsheet_bake_changed data, by bake. Starts from what the last run saved, so a restart alone
+        # doesn't re-announce unchanged bakes (each announcement restarts the iPhone's progress bar)
+        self._cards: dict[str, dict[str, Any]] = {
+            bake.id: bake_changed_data(bake) for bake in coordinator.restored_bakes.values()}
 
     @callback
     def async_start(self) -> Callable[[], None]:
         """Time events now and after every data change; returns the function that stops it."""
         remove_listener = self._coordinator.async_add_listener(self.async_reschedule)
+        stop_progress = async_track_time_interval(self._hass, self._announce_progress, PROGRESS_EVERY)
         self.async_reschedule()
 
         def stop() -> None:
             remove_listener()
+            stop_progress()
             self._cancel()
         return stop
 
@@ -139,6 +156,16 @@ class StepEvents:
                 self._hass.bus.async_fire(EVENT_BAKE_CHANGED, data)
         for bake_id in self._cards.keys() - bakes.keys():
             del self._cards[bake_id]
+
+    @callback
+    def _announce_progress(self, _now: datetime) -> None:
+        """breadsheet_bake_progress for each active bake with a step still to come."""
+        state = self._coordinator.data
+        if state is None:
+            return
+        for bake in state.bakes.values():
+            if next_step(bake) is not None:
+                self._hass.bus.async_fire(EVENT_BAKE_PROGRESS, bake_changed_data(bake))
 
     def _times(self, scheduled_at: datetime) -> list[tuple[str, datetime]]:
         times = [(EVENT_STEP_DUE, scheduled_at), (EVENT_STEP_LATE, scheduled_at + LATE_AFTER)]

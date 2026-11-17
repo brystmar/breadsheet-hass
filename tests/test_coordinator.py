@@ -227,7 +227,7 @@ class TestRestarts:
 
         await set_up(hass, mock_config_entry)
 
-        assert [event.data for event in ended] == [{"bake_id": BAKE_ID}]
+        assert [event.data for event in ended] == [{"bake_id": BAKE_ID, "steps_total": 3}]
 
     async def test_unreadable_saved_bakes_are_ignored(
             self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry,
@@ -262,7 +262,7 @@ class TestBakeEnded:
         await wait(hass, frozen, 61)
         await wait(hass, frozen, 61)  # still gone: no second event
 
-        assert [event.data for event in ended] == [{"bake_id": BAKE_ID}]
+        assert [event.data for event in ended] == [{"bake_id": BAKE_ID, "steps_total": 3}]
         assert list(coordinator.data.bakes) == [OTHER_BAKE_ID]
 
     async def test_failed_polls_and_304s_never_fire(
